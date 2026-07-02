@@ -66,5 +66,7 @@ jobs:
       - name: Build and Push with Skaffold
         run: |
           skaffold build \
+            --platform=linux/amd64,linux/arm64 \
             --default-repo=ghcr.io/${{ github.repository }} \
             --push=${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+
