@@ -33,7 +33,7 @@ func TestLoad_Success(t *testing.T) {
 	if cfg.OpenRouterKey != "key-xyz" {
 		t.Errorf("Expected OpenRouterKey to be 'key-xyz', got %s", cfg.OpenRouterKey)
 	}
-	if cfg.DefaultModel != "meta-llama/llama-3-70b-instruct" {
+	if cfg.DefaultModel != "meta-llama/llama-3.1-70b-instruct" {
 		t.Errorf("Expected DefaultModel to be default, got %s", cfg.DefaultModel)
 	}
 	if cfg.ContextSentence != DefaultContextSentence {

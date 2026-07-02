@@ -12,7 +12,7 @@ type Config struct {
 	WebhookSecret   string `envconfig:"GITHUB_WEBHOOK_SECRET" required:"true"`
 	GitHubToken     string `envconfig:"GITHUB_TOKEN" required:"true"`
 	OpenRouterKey   string `envconfig:"OPENROUTER_API_KEY" required:"true"`
-	DefaultModel    string `envconfig:"DEFAULT_MODEL" default:"meta-llama/llama-3-70b-instruct"`
+	DefaultModel    string `envconfig:"DEFAULT_MODEL" default:"meta-llama/llama-3.1-70b-instruct"`
 	BotName         string   `envconfig:"BOT_NAME" default:"@ai-bot"`
 	Port            string   `envconfig:"PORT" default:"8080"`
 	ContextSentence string   `envconfig:"CONTEXT_SENTENCE"`
