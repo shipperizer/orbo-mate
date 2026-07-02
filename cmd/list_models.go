@@ -15,8 +15,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var lang string
-
 type OpenRouterModelsResponse struct {
 	Data []Model `json:"data"`
 }
@@ -38,14 +36,10 @@ var listModelsCmd = &cobra.Command{
 	Use:   "list-models",
 	Short: "List top 10 best value for money models on OpenRouter for reviewing code",
 	Run: func(cmd *cobra.Command, args []string) {
-		if lang != "python" && lang != "typescript" && lang != "golang" {
-			log.Fatalf("Language must be one of: python, typescript, golang")
-		}
-
-		fmt.Printf("Fetching available models from OpenRouter for %s...\n", lang)
+		fmt.Println("Fetching available programming models from OpenRouter...")
 
 		ctx := context.Background()
-		req, err := http.NewRequestWithContext(ctx, "GET", "https://openrouter.ai/api/v1/models", nil)
+		req, err := http.NewRequestWithContext(ctx, "GET", "https://openrouter.ai/api/v1/models?category=programming", nil)
 		if err != nil {
 			log.Fatalf("Failed to create request: %v", err)
 		}
@@ -77,17 +71,17 @@ var listModelsCmd = &cobra.Command{
 				continue
 			}
 
-			if isCodingModel(m.ID, m.Name, m.Description, lang) {
+			if isSuitableProgrammingModel(m.ID, m.Name, m.Description) {
 				filteredModels = append(filteredModels, m)
 			}
 		}
 
 		if len(filteredModels) == 0 {
-			fmt.Println("No matching models found on OpenRouter.")
+			fmt.Println("No matching programming models found on OpenRouter.")
 			return
 		}
 
-		// Sort filtered models:
+		// Sort filtered models by price:
 		// 1. Prompt price ascending (cheaper first)
 		// 2. Completion price ascending
 		// 3. Context window descending (larger first)
@@ -115,7 +109,7 @@ var listModelsCmd = &cobra.Command{
 		}
 		topModels := filteredModels[:limit]
 
-		fmt.Println("\nTop 10 Best Value-for-Money Models on OpenRouter:")
+		fmt.Println("\nTop 10 Best Value-for-Money Programming Models on OpenRouter:")
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
 		fmt.Fprintln(w, "MODEL ID\tNAME\tCONTEXT\tPROMPT/1M\tCOMPLETION/1M")
 		fmt.Fprintln(w, "--------\t----\t-------\t---------\t-------------")
@@ -165,7 +159,7 @@ func formatContext(ctx int) string {
 	return fmt.Sprintf("%d", ctx)
 }
 
-func isCodingModel(id, name, desc string, lang string) bool {
+func isSuitableProgrammingModel(id, name, desc string) bool {
 	idLower := strings.ToLower(id)
 	nameLower := strings.ToLower(name)
 	descLower := strings.ToLower(desc)
@@ -178,18 +172,9 @@ func isCodingModel(id, name, desc string, lang string) bool {
 		}
 	}
 
-	// Include models matching keywords
-	keywords := []string{"code", "coder", "instruct", "llama", "gemini", "claude", "qwen", "gpt", "deepseek", strings.ToLower(lang)}
-	for _, k := range keywords {
-		if strings.Contains(idLower, k) || strings.Contains(nameLower, k) || strings.Contains(descLower, k) {
-			return true
-		}
-	}
-
-	return false
+	return true
 }
 
 func init() {
-	listModelsCmd.Flags().StringVarP(&lang, "lang", "l", "golang", "Language to review (python, typescript, golang)")
 	rootCmd.AddCommand(listModelsCmd)
 }

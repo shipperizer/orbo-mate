@@ -87,16 +87,12 @@ The server will start listening on port `8080` (or your configured `PORT`) at th
 
 ### List Recommended Models
 
-To consult OpenRouter for the top 10 best value-for-money AI models for reviewing a specific programming language:
+To consult OpenRouter for the top 10 best value-for-money AI models categorized under programming:
 
 ```bash
-export OPENROUTER_API_KEY="sk-or-v1-your-key"
-export ALLOWED_ORGS="your-github-org" # Required configuration
-
-./orbo-mate list-models --lang [python|typescript|golang]
+./orbo-mate list-models
 ```
 
-*   `-l`, `--lang` (Default: `golang`): The target programming language to evaluate.
 
 ---
 
