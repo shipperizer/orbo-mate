@@ -1,0 +1,10 @@
+schemaVersion: 2.0.0
+commandTests:
+  - name: "check orbo-mate binary"
+    command: "/orbo-mate"
+    args: ["-h"]
+fileExistenceTests:
+  - name: "binary exists"
+    path: "/orbo-mate"
+    shouldExist: true
+    permissions: "-rwxr-xr-x"

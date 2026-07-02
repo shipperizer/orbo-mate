@@ -1,0 +1,19 @@
+apiVersion: skaffold/v4beta11
+kind: Config
+metadata:
+  name: orbo-mate
+build:
+  artifacts:
+    - image: orbo-mate
+      docker:
+        dockerfile: Dockerfile
+test:
+  - image: orbo-mate
+    structureTests:
+      - structure-tests.yaml
+manifests:
+  kustomize:
+    paths:
+      - k8s/base
+deploy:
+  kubectl: {}

@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orbo-mate
+  labels:
+    app: orbo-mate
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orbo-mate
+  template:
+    metadata:
+      labels:
+        app: orbo-mate
+    spec:
+      containers:
+      - name: orbo-mate
+        image: orbo-mate
+        ports:
+        - containerPort: 8080
