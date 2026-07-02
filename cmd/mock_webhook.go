@@ -143,7 +143,7 @@ func computeHMAC256(body []byte, secret string) string {
 
 func init() {
 	mockWebhookCmd.Flags().StringVarP(&prURL, "pr-url", "u", "", "The GitHub PR URL (required)")
-	mockWebhookCmd.Flags().StringVarP(&modelName, "model", "m", "meta-llama/llama-3-70b-instruct", "The target review model")
+	mockWebhookCmd.Flags().StringVarP(&modelName, "model", "m", "meta-llama/llama-3.1-70b-instruct", "The target review model")
 	mockWebhookCmd.Flags().StringVarP(&serverURL, "server-url", "s", "http://localhost:8080/webhook", "The local server webhook URL")
 	mockWebhookCmd.Flags().StringVarP(&customMsg, "comment", "c", "", "Use a custom comment body instead of the default review command")
 
