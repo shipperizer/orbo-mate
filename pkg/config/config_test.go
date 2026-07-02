@@ -11,10 +11,12 @@ func TestLoad_Success(t *testing.T) {
 	os.Setenv("GITHUB_WEBHOOK_SECRET", "super-secret")
 	os.Setenv("GITHUB_TOKEN", "token-123")
 	os.Setenv("OPENROUTER_API_KEY", "key-xyz")
+	os.Setenv("ALLOWED_ORGS", "test-org,another-org")
 	defer func() {
 		os.Unsetenv("GITHUB_WEBHOOK_SECRET")
 		os.Unsetenv("GITHUB_TOKEN")
 		os.Unsetenv("OPENROUTER_API_KEY")
+		os.Unsetenv("ALLOWED_ORGS")
 	}()
 
 	cfg, err := Load()
@@ -43,6 +45,7 @@ func TestLoad_ContextSentenceTruncation(t *testing.T) {
 	os.Setenv("GITHUB_WEBHOOK_SECRET", "secret")
 	os.Setenv("GITHUB_TOKEN", "token")
 	os.Setenv("OPENROUTER_API_KEY", "key")
+	os.Setenv("ALLOWED_ORGS", "test-org")
 
 	longSentence := strings.Repeat("A", 600)
 	os.Setenv("CONTEXT_SENTENCE", longSentence)
@@ -52,6 +55,7 @@ func TestLoad_ContextSentenceTruncation(t *testing.T) {
 		os.Unsetenv("GITHUB_TOKEN")
 		os.Unsetenv("OPENROUTER_API_KEY")
 		os.Unsetenv("CONTEXT_SENTENCE")
+		os.Unsetenv("ALLOWED_ORGS")
 	}()
 
 	cfg, err := Load()

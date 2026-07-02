@@ -13,9 +13,10 @@ type Config struct {
 	GitHubToken     string `envconfig:"GITHUB_TOKEN" required:"true"`
 	OpenRouterKey   string `envconfig:"OPENROUTER_API_KEY" required:"true"`
 	DefaultModel    string `envconfig:"DEFAULT_MODEL" default:"meta-llama/llama-3-70b-instruct"`
-	BotName         string `envconfig:"BOT_NAME" default:"@ai-bot"`
-	Port            string `envconfig:"PORT" default:"8080"`
-	ContextSentence string `envconfig:"CONTEXT_SENTENCE"`
+	BotName         string   `envconfig:"BOT_NAME" default:"@ai-bot"`
+	Port            string   `envconfig:"PORT" default:"8080"`
+	ContextSentence string   `envconfig:"CONTEXT_SENTENCE"`
+	AllowedOrgs     []string `envconfig:"ALLOWED_ORGS" required:"true"`
 }
 
 // DefaultContextSentence is the default prompt context sent to OpenRouter.
