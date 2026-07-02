@@ -1,0 +1,25 @@
+# Ignore version control
+.git
+.gitignore
+
+# Ignore GitHub Actions and agent configs
+.github
+.agents
+
+# Ignore Kubernetes manifests (changing manifests should only trigger redeploy, not rebuild)
+k8s
+
+# Ignore local builds, binaries and coverage output
+orbo-mate
+orbo-mate-arm64
+*.out
+*.log
+
+# Ignore documentation and developer toolings
+README.md
+Makefile
+conventional_commits.sh
+structure-tests.yaml
+
+# Ignore testing suites that are not needed inside the production build context
+integration_test
