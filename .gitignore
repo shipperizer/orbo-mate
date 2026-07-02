@@ -1,1 +1,43 @@
+# Compiled Go Binaries and Executables
 orbo-mate
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+*.prof
+
+# Test and Coverage Artifacts
+*.coverprofile
+coverage.out
+*coverage.out
+
+# Mocks and Generated Files (Generated via go:generate / mockgen on-the-fly)
+mocks/
+*_mock.go
+
+# Go Modules / Vendor
+# (Uncomment if you do not want to commit the vendor directory)
+# vendor/
+
+# Dependency directories
+.go/
+bin/
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Operating System Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
