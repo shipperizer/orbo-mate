@@ -1,7 +1,13 @@
-.PHONY: build test test-short vet fmt mock
+.PHONY: build build-arm64 test test-short vet fmt mock
+
+GOOS ?= $(shell go env GOOS)
+GOARCH ?= $(shell go env GOARCH)
 
 build:
-	go build -v ./...
+	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -v -o orbo-mate main.go
+
+build-arm64:
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -v -o orbo-mate-arm64 main.go
 
 test:
 	go test -race ./...
