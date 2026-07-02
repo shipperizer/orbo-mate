@@ -1,0 +1,51 @@
+openapi: 3.0.3
+info:
+  title: Orbo-Mate Webhook Server API
+  description: |
+    API specification for the Orbo-Mate GitHub PR Reviewer bot webhook.
+    
+    The webhook receives GitHub Issue Comment events. Since the payload structure
+    is incredibly complex and dynamic, parsing and validation are handled directly by
+    the official Go GitHub SDK (`github.com/google/go-github`). Therefore, a full Protobuf
+    definition or separate detailed OpenAPI schema for the GitHub payload is unnecessary,
+    redundant, and self-explanatory through the official SDK models.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+paths:
+  /webhook:
+    post:
+      summary: Handle GitHub Webhook Event
+      description: |
+        Receives GitHub Issue Comment events. It validates the request signature
+        using the `X-Hub-Signature-256` header and the configured webhook secret.
+        If a new PR comment matches `@ai-bot review with <model>`, it fetches the
+        PR diff, requests a review from OpenRouter, and posts the results back.
+      parameters:
+        - name: X-GitHub-Event
+          in: header
+          required: true
+          schema:
+            type: string
+          description: The type of event (e.g., 'issue_comment')
+        - name: X-Hub-Signature-256
+          in: header
+          required: true
+          schema:
+            type: string
+          description: HMAC hex digest of the payload using the webhook secret
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: GitHub Webhook Event Payload (IssueCommentEvent)
+      responses:
+        '200':
+          description: Event successfully processed or ignored (e.g. not a PR comment)
+        '400':
+          description: Bad request (invalid payload or format)
+        '401':
+          description: Unauthorized (invalid signature)
