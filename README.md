@@ -28,7 +28,7 @@ The application is configured using environment variables.
 | `GITHUB_TOKEN` | GitHub PAT for fetching diffs and posting comments. | Yes | - |
 | `OPENROUTER_API_KEY` | Your OpenRouter API key. | Yes | - |
 | `ALLOWED_ORGS` | Comma-separated list of GitHub organizations allowed to trigger the bot (e.g., `my-org,another-org`). Prevents unauthorized or cross-org webhook execution. | **Yes** | - |
-| `DEFAULT_MODEL` | Default AI model to use if none is specified. | No | `meta-llama/llama-3-70b-instruct` |
+| `DEFAULT_MODEL` | Default AI model to use if none is specified. | No | `meta-llama/llama-3.1-70b-instruct` |
 | `BOT_NAME` | The mention handle that triggers the bot. | No | `@ai-bot` |
 | `PORT` | Port for the webhook server to listen on. | No | `8080` |
 | `CONTEXT_SENTENCE` | Custom system prompt for the AI reviewer (max 500 chars). | No | *Standard code review prompt* |
@@ -119,7 +119,7 @@ export GITHUB_WEBHOOK_SECRET="your-secret"
 #### Mock Webhook Flags
 
 *   `-u`, `--pr-url` (Required): The GitHub Pull Request URL. Must match an organization listed in `ALLOWED_ORGS`.
-*   `-m`, `--model`: The AI model to use (default: `meta-llama/llama-3-70b-instruct`).
+*   `-m`, `--model`: The AI model to use (default: `meta-llama/llama-3.1-70b-instruct`).
 *   `-s`, `--server-url`: URL of your local running server (default: `http://localhost:8080/webhook`).
 *   `-c`, `--comment`: Custom comment body (default: `@ai-bot review with <model>`).
 
