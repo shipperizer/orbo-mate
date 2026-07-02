@@ -67,6 +67,30 @@ func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	switch e := event.(type) {
 	case *github.IssueCommentEvent:
 		if e.GetAction() == "created" && e.GetIssue() != nil && e.GetIssue().IsPullRequest() {
+			org := e.GetRepo().GetOwner().GetLogin()
+			
+			// 1. Check if the org is allowed
+			isAllowed := false
+			for _, allowedOrg := range s.cfg.AllowedOrgs {
+				if org == allowedOrg {
+					isAllowed = true
+					break
+				}
+			}
+
+			if !isAllowed {
+				log.Printf("Ignored comment from unauthorized org: %s", org)
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+
+			// 2. Prevent cross-org requests (ensure comment is on the same repo as the issue)
+			if e.GetIssue().GetRepositoryURL() != e.GetRepo().GetURL() {
+				log.Printf("Cross-org request detected. Issue Repo: %s, Event Repo: %s", e.GetIssue().GetRepositoryURL(), e.GetRepo().GetURL())
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+
 			// Submit review task to the concurrent worker pool
 			s.pool.Submit(func(ctx context.Context) {
 				s.reviewer.ProcessComment(ctx, e)
