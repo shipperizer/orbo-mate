@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 
+	"os"
+
 	"github.com/shipperizer/orbo-mate/pkg/config"
 	"github.com/shipperizer/orbo-mate/pkg/reviewer"
 	"github.com/spf13/cobra"
@@ -16,6 +18,20 @@ var listModelsCmd = &cobra.Command{
 	Use:   "list-models",
 	Short: "List top 10 best value for money models on OpenRouter for reviewing code",
 	Run: func(cmd *cobra.Command, args []string) {
+		// Provide dummy values for non-essential required variables if they are not set
+		if os.Getenv("GITHUB_WEBHOOK_SECRET") == "" {
+			os.Setenv("GITHUB_WEBHOOK_SECRET", "dummy-value")
+			defer os.Unsetenv("GITHUB_WEBHOOK_SECRET")
+		}
+		if os.Getenv("GITHUB_TOKEN") == "" {
+			os.Setenv("GITHUB_TOKEN", "dummy-value")
+			defer os.Unsetenv("GITHUB_TOKEN")
+		}
+		if os.Getenv("ALLOWED_ORGS") == "" {
+			os.Setenv("ALLOWED_ORGS", "dummy-value")
+			defer os.Unsetenv("ALLOWED_ORGS")
+		}
+
 		cfg, err := config.Load()
 		if err != nil {
 			log.Fatalf("Failed to load config: %v", err)
