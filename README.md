@@ -8,11 +8,12 @@ Orbo-Mate is an automated GitHub Pull Request reviewer bot written in Go. It lis
 *   **Trigger:** Responds to comments like `@ai-bot review with <model>` on PRs.
 *   **AI Code Review:** Integrates with OpenRouter to review code diffs using various LLMs (e.g., Llama 3, GPT-4, etc.).
 *   **Concurrent Processing:** Uses a goroutine worker pool (max 100 concurrent workers) for handling multiple reviews asynchronously.
+*   **Security Restrictions:** Limits triggers to allowed organizations and prevents cross-organization attacks by validating comment origins.
 *   **Configurable:** Highly customizable via environment variables.
 
 ## 🛠️ Prerequisites
 
-*   Go 1.21+
+*   Go 1.22+ (preferably 1.26+)
 *   A GitHub Webhook configured for your repository (Content type: `application/json`, Event: `Issue comments`).
 *   A GitHub Personal Access Token (PAT) with repository read and pull request comment write permissions.
 *   An OpenRouter API Key.
@@ -26,12 +27,34 @@ The application is configured using environment variables.
 | `GITHUB_WEBHOOK_SECRET` | Secret used to sign and verify GitHub webhook payloads. | Yes | - |
 | `GITHUB_TOKEN` | GitHub PAT for fetching diffs and posting comments. | Yes | - |
 | `OPENROUTER_API_KEY` | Your OpenRouter API key. | Yes | - |
+| `ALLOWED_ORGS` | Comma-separated list of GitHub organizations allowed to trigger the bot (e.g., `my-org,another-org`). Prevents unauthorized or cross-org webhook execution. | **Yes** | - |
 | `DEFAULT_MODEL` | Default AI model to use if none is specified. | No | `meta-llama/llama-3-70b-instruct` |
 | `BOT_NAME` | The mention handle that triggers the bot. | No | `@ai-bot` |
 | `PORT` | Port for the webhook server to listen on. | No | `8080` |
 | `CONTEXT_SENTENCE` | Custom system prompt for the AI reviewer (max 500 chars). | No | *Standard code review prompt* |
 
 ## 🏃 Running the Application
+
+### Using the Makefile
+
+We include a robust `Makefile` for standard Go development workflows:
+
+```bash
+# Build the application
+make build
+
+# Run unit tests and integration tests with the race detector
+make test
+
+# Run tests in short mode
+make test-short
+
+# Vet the source code
+make vet
+
+# Format the codebase
+make fmt
+```
 
 ### 1. Build the CLI
 
@@ -47,30 +70,59 @@ Set the required environment variables and start the server:
 export GITHUB_WEBHOOK_SECRET="your-secret"
 export GITHUB_TOKEN="ghp_your-token"
 export OPENROUTER_API_KEY="sk-or-v1-your-key"
+export ALLOWED_ORGS="your-github-org"
 
 ./orbo-mate server
 ```
 
 The server will start listening on port `8080` (or your configured `PORT`) at the `/webhook` endpoint.
 
+## 📋 Additional CLI Commands
+
+### List Recommended Models
+
+To consult OpenRouter for the top 10 best value-for-money AI models for reviewing a specific programming language:
+
+```bash
+export OPENROUTER_API_KEY="sk-or-v1-your-key"
+export ALLOWED_ORGS="your-github-org" # Required configuration
+
+./orbo-mate list-models --lang [python|typescript|golang]
+```
+
+*   `-l`, `--lang` (Default: `golang`): The target programming language to evaluate.
+
+---
+
 ## 🧪 Testing Locally
 
-You can test the bot's logic without triggering a real GitHub webhook using the built-in `mock-webhook` command.
+### Mock Webhook Trigger
 
-1.  Ensure your `orbo-mate server` is running.
-2.  Open a new terminal window.
-3.  Set the `GITHUB_WEBHOOK_SECRET` (it must match the one the server is using).
-4.  Run the mock command, providing a real PR URL:
+You can test the bot's end-to-end routing and processing logic locally without setting up an actual GitHub organization webhook by using the `mock-webhook` command:
+
+1. Ensure your `orbo-mate server` is running locally.
+2. In a new terminal, export matching webhook secrets:
 
 ```bash
 export GITHUB_WEBHOOK_SECRET="your-secret"
 
-./orbo-mate mock-webhook --pr-url "https://github.com/owner/repo/pull/123"
+# Mimics an issue comment trigger on a pull request
+./orbo-mate mock-webhook --pr-url "https://github.com/your-github-org/your-repo/pull/123"
 ```
 
-### Mock Webhook Flags
+#### Mock Webhook Flags
 
-*   `-u`, `--pr-url` (Required): The GitHub PR URL to review.
+*   `-u`, `--pr-url` (Required): The GitHub Pull Request URL. Must match an organization listed in `ALLOWED_ORGS`.
 *   `-m`, `--model`: The AI model to use (default: `meta-llama/llama-3-70b-instruct`).
-*   `-s`, `--server-url`: URL of your local server (default: `http://localhost:8080/webhook`).
-*   `-c`, `--comment`: Custom comment body (default triggers a review).
+*   `-s`, `--server-url`: URL of your local running server (default: `http://localhost:8080/webhook`).
+*   `-c`, `--comment`: Custom comment body (default: `@ai-bot review with <model>`).
+
+---
+
+## 🏗️ Generating Mocks for Testing
+
+This project uses `go.uber.org/mock/mockgen` for dependency mocking. Unit test mock files are **excluded** from version control. If you add or modify interface signatures, regenerate them on-the-fly:
+
+```bash
+go generate ./...
+```
