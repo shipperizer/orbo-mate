@@ -57,12 +57,15 @@ var mockWebhookCmd = &cobra.Command{
 			commentBody = fmt.Sprintf("%s review with %s", cfg.BotName, modelName)
 		}
 
+		repoURL := fmt.Sprintf("https://api.github.com/repos/%s/%s", owner, repo)
+
 		// Create mock issue comment event payload
 		event := github.IssueCommentEvent{
 			Action: github.String("created"),
 			Issue: &github.Issue{
 				Number:           github.Int(prNum),
 				PullRequestLinks: &github.PullRequestLinks{}, // ensures IsPullRequest() returns true
+				RepositoryURL:    github.String(repoURL),
 			},
 			Comment: &github.IssueComment{
 				Body: github.String(commentBody),
@@ -72,6 +75,7 @@ var mockWebhookCmd = &cobra.Command{
 				Owner: &github.User{
 					Login: github.String(owner),
 				},
+				URL: github.String(repoURL),
 			},
 		}
 
