@@ -19,3 +19,8 @@ spec:
         image: orbo-mate
         ports:
         - containerPort: 8080
+        envFrom:
+        - configMapRef:
+            name: orbo-mate-config
+        - secretRef:
+            name: orbo-mate-secret

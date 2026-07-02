@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: orbo-mate-config
+  labels:
+    app: orbo-mate
+data:
+  ALLOWED_ORGS: "dummy-org,another-org"
+  DEFAULT_MODEL: "meta-llama/llama-3.1-70b-instruct"
+  BOT_NAME: "@ai-bot"
+  PORT: "8080"
+  CONTEXT_SENTENCE: "You are an expert code reviewer. Please review the following git diff payload. Highlight potential bugs, security issues, performance bottlenecks, and structural improvements."
