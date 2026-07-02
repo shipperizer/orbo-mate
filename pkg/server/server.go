@@ -10,19 +10,25 @@ import (
 	"github.com/google/go-github/v60/github"
 	"github.com/shipperizer/orbo-mate/pkg/config"
 	"github.com/shipperizer/orbo-mate/pkg/pool"
-	"github.com/shipperizer/orbo-mate/pkg/reviewer"
 )
+
+// CommentProcessor defines the interface for processing webhook comments.
+//
+//go:generate mockgen -source=server.go -destination=mocks/mock_reviewer.go -package=mocks
+type CommentProcessor interface {
+	ProcessComment(ctx context.Context, event *github.IssueCommentEvent)
+}
 
 // Server sets up the routes and dependencies for the webhook server.
 type Server struct {
 	cfg      *config.Config
 	pool     *pool.Pool
-	reviewer *reviewer.Reviewer
+	reviewer CommentProcessor
 	router   *chi.Mux
 }
 
 // NewServer returns a new configured webhook Server.
-func NewServer(cfg *config.Config, p *pool.Pool, rev *reviewer.Reviewer) *Server {
+func NewServer(cfg *config.Config, p *pool.Pool, rev CommentProcessor) *Server {
 	s := &Server{
 		cfg:      cfg,
 		pool:     p,
