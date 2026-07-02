@@ -40,8 +40,14 @@ The application is configured using environment variables.
 We include a robust `Makefile` for standard Go development workflows:
 
 ```bash
-# Build the application
+# Build the application for your host platform
 make build
+
+# Build the application for linux/arm64 architecture
+make build-arm64
+
+# Build for any custom platform via environment variables
+GOOS=darwin GOARCH=arm64 make build
 
 # Run unit tests and integration tests with the race detector
 make test
