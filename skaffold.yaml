@@ -3,6 +3,7 @@ kind: Config
 metadata:
   name: orbo-mate
 build:
+  platforms: ["linux/amd64", "linux/arm64"]
   artifacts:
     - image: orbo-mate
       docker:
