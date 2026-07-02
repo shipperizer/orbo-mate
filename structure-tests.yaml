@@ -3,6 +3,10 @@ commandTests:
   - name: "check orbo-mate binary"
     command: "/orbo-mate"
     args: ["-h"]
+  - name: "check orbo-mate version"
+    command: "/orbo-mate"
+    args: ["version"]
+    expectedOutput: ["orbo-mate version 0.1.0"]
 fileExistenceTests:
   - name: "binary exists"
     path: "/orbo-mate"

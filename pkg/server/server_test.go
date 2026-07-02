@@ -184,3 +184,58 @@ func TestServer_WebhookAllowedOrgsAndCrossOrg(t *testing.T) {
 	// Wait a tiny bit for the worker pool goroutine to run
 	time.Sleep(100 * time.Millisecond)
 }
+
+func TestServer_VersionAndHealthz(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockReviewer := mocks.NewMockCommentProcessor(ctrl)
+
+	cfg := &config.Config{
+		WebhookSecret: "secret-key",
+		GitHubToken:   "token",
+		OpenRouterKey: "key",
+		BotName:       "@ai-bot",
+		AllowedOrgs:   []string{"my-org"},
+	}
+
+	p := pool.NewPool(2)
+	p.Start()
+	defer p.Stop()
+
+	srv := NewServer(cfg, p, mockReviewer)
+
+	// Test /version
+	req, _ := http.NewRequest("GET", "/version", nil)
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", rr.Code)
+	}
+
+	var versionResp map[string]string
+	if err := json.NewDecoder(rr.Body).Decode(&versionResp); err != nil {
+		t.Fatalf("Failed to decode version response: %v", err)
+	}
+	if versionResp["version"] != "0.1.0" {
+		t.Errorf("Expected version '0.1.0', got '%s'", versionResp["version"])
+	}
+
+	// Test /healthz
+	req, _ = http.NewRequest("GET", "/healthz", nil)
+	rr = httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", rr.Code)
+	}
+
+	var healthzResp map[string]string
+	if err := json.NewDecoder(rr.Body).Decode(&healthzResp); err != nil {
+		t.Fatalf("Failed to decode healthz response: %v", err)
+	}
+	if healthzResp["status"] != "ok" {
+		t.Errorf("Expected status 'ok', got '%s'", healthzResp["status"])
+	}
+}

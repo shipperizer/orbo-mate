@@ -2,14 +2,18 @@ package server
 
 import (
 	"context"
-	"log"
+	"encoding/json"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/go-github/v60/github"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/shipperizer/orbo-mate/pkg/config"
+	"github.com/shipperizer/orbo-mate/pkg/logger"
 	"github.com/shipperizer/orbo-mate/pkg/pool"
+	"github.com/shipperizer/orbo-mate/pkg/telemetry"
+	"github.com/shipperizer/orbo-mate/pkg/version"
 )
 
 // CommentProcessor defines the interface for processing webhook comments.
@@ -43,10 +47,15 @@ func NewServer(cfg *config.Config, p *pool.Pool, rev CommentProcessor) *Server {
 func (s *Server) setupRoutes() {
 	s.router.Use(middleware.RequestID)
 	s.router.Use(middleware.RealIP)
+	s.router.Use(telemetry.TracingMiddleware)
+	s.router.Use(telemetry.PrometheusMiddleware)
 	s.router.Use(middleware.Logger)
 	s.router.Use(middleware.Recoverer)
 
 	s.router.Post("/webhook", s.handleWebhook)
+	s.router.Get("/version", s.handleVersion)
+	s.router.Get("/healthz", s.handleHealthz)
+	s.router.Handle("/metrics", promhttp.Handler())
 }
 
 // ServeHTTP delegates the HTTP requests to the chi router.
@@ -58,14 +67,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	payload, err := github.ValidatePayload(r, []byte(s.cfg.WebhookSecret))
 	if err != nil {
-		log.Printf("Webhook signature verification failed: %v", err)
+		logger.Errorf("Webhook signature verification failed: %v", err)
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	event, err := github.ParseWebHook(github.WebHookType(r), payload)
 	if err != nil {
-		log.Printf("Could not parse webhook: %v", err)
+		logger.Errorf("Could not parse webhook: %v", err)
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
@@ -85,14 +94,14 @@ func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if !isAllowed {
-				log.Printf("Ignored comment from unauthorized org: %s", org)
+				logger.Warnf("Ignored comment from unauthorized org: %s", org)
 				w.WriteHeader(http.StatusOK)
 				return
 			}
 
 			// 2. Prevent cross-org requests (ensure comment is on the same repo as the issue)
 			if e.GetIssue().GetRepositoryURL() != e.GetRepo().GetURL() {
-				log.Printf("Cross-org request detected. Issue Repo: %s, Event Repo: %s", e.GetIssue().GetRepositoryURL(), e.GetRepo().GetURL())
+				logger.Warnf("Cross-org request detected. Issue Repo: %s, Event Repo: %s", e.GetIssue().GetRepositoryURL(), e.GetRepo().GetURL())
 				w.WriteHeader(http.StatusOK)
 				return
 			}
@@ -101,8 +110,19 @@ func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 			s.pool.Submit(func(ctx context.Context) {
 				s.reviewer.ProcessComment(ctx, e)
 			})
+			telemetry.WebhooksProcessedTotal.WithLabelValues("success").Inc()
 		}
 	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"version": version.Version})
+}
+
+func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"sort"
@@ -12,6 +11,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/shipperizer/orbo-mate/pkg/logger"
 	"github.com/spf13/cobra"
 )
 
@@ -41,22 +41,22 @@ var listModelsCmd = &cobra.Command{
 		ctx := context.Background()
 		req, err := http.NewRequestWithContext(ctx, "GET", "https://openrouter.ai/api/v1/models?category=programming", nil)
 		if err != nil {
-			log.Fatalf("Failed to create request: %v", err)
+			logger.Fatalf("Failed to create request: %v", err)
 		}
 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
-			log.Fatalf("Failed to retrieve models: %v", err)
+			logger.Fatalf("Failed to retrieve models: %v", err)
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			log.Fatalf("OpenRouter models API returned status: %s", resp.Status)
+			logger.Fatalf("OpenRouter models API returned status: %s", resp.Status)
 		}
 
 		var openRouterResp OpenRouterModelsResponse
 		if err := json.NewDecoder(resp.Body).Decode(&openRouterResp); err != nil {
-			log.Fatalf("Failed to decode JSON response: %v", err)
+			logger.Fatalf("Failed to decode JSON response: %v", err)
 		}
 
 		var filteredModels []Model

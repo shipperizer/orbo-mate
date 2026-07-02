@@ -1,10 +1,10 @@
 package config
 
 import (
-	"log"
 	"unicode/utf8"
 
 	"github.com/kelseyhightower/envconfig"
+	"github.com/shipperizer/orbo-mate/pkg/logger"
 )
 
 // Config holds all the environment variables.
@@ -36,7 +36,7 @@ func Load() (*Config, error) {
 
 	// Validate context sentence length (limit to 500 chars)
 	if utf8.RuneCountInString(cfg.ContextSentence) > 500 {
-		log.Printf("Warning: CONTEXT_SENTENCE length is %d, which exceeds the limit of 500 characters. Truncating to 500 characters.", utf8.RuneCountInString(cfg.ContextSentence))
+		logger.Warnf("Warning: CONTEXT_SENTENCE length is %d, which exceeds the limit of 500 characters. Truncating to 500 characters.", utf8.RuneCountInString(cfg.ContextSentence))
 		runes := []rune(cfg.ContextSentence)
 		cfg.ContextSentence = string(runes[:500])
 	}

@@ -3,7 +3,17 @@
   "packages": {
     ".": {
       "release-type": "go",
-      "changelog-path": "CHANGELOG.md"
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "pkg/version/version.go"
+        },
+        {
+          "type": "generic",
+          "path": "k8s/base/deployment.yaml"
+        }
+      ]
     }
   }
 }

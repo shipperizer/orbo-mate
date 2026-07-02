@@ -4,6 +4,8 @@ metadata:
   name: orbo-mate
   labels:
     app: orbo-mate
+  annotations:
+    app.kubernetes.io/version: "0.1.0" # x-release-please-version
 spec:
   replicas: 1
   selector:
@@ -18,6 +20,7 @@ spec:
       containers:
       - name: orbo-mate
         image: orbo-mate
+        args: ["server"]
         ports:
         - containerPort: 8080
         envFrom:

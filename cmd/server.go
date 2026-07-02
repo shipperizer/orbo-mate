@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -10,9 +9,11 @@ import (
 	"time"
 
 	"github.com/shipperizer/orbo-mate/pkg/config"
+	"github.com/shipperizer/orbo-mate/pkg/logger"
 	"github.com/shipperizer/orbo-mate/pkg/pool"
 	"github.com/shipperizer/orbo-mate/pkg/reviewer"
 	"github.com/shipperizer/orbo-mate/pkg/server"
+	"github.com/shipperizer/orbo-mate/pkg/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -21,9 +22,19 @@ var serverCmd = &cobra.Command{
 	Short: "Start the webhook server",
 	Long:  `Start the Go HTTP webhook server to listen for GitHub events.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		// Initialize structured logger
+		logger.Init()
+		defer logger.Shutdown()
+
+		// Initialize OpenTelemetry tracer
+		tpShutdown, err := telemetry.InitTracer(context.Background())
+		if err != nil {
+			logger.Fatalf("Failed to initialize OpenTelemetry tracer: %v", err)
+		}
+
 		cfg, err := config.Load()
 		if err != nil {
-			log.Fatalf("Failed to load configuration: %v", err)
+			logger.Fatalf("Failed to load configuration: %v", err)
 		}
 
 		// Create goroutine worker pool with maximum of 100 concurrent workers
@@ -55,27 +66,34 @@ var serverCmd = &cobra.Command{
 			go func() {
 				<-shutdownCtx.Done()
 				if shutdownCtx.Err() == context.DeadlineExceeded {
-					log.Fatal("graceful shutdown timed out.. forcing exit.")
+					logger.Fatal("graceful shutdown timed out.. forcing exit.")
 				}
 			}()
+
+			// Flush remaining traces
+			if tpShutdown != nil {
+				if err := tpShutdown(shutdownCtx); err != nil {
+					logger.Errorf("Failed to shutdown tracer provider: %v", err)
+				}
+			}
 
 			// Trigger graceful shutdown
 			err := httpServer.Shutdown(shutdownCtx)
 			if err != nil {
-				log.Fatal(err)
+				logger.Fatalf("Failed to shutdown server: %v", err)
 			}
 			serverStopCtx()
 		}()
 
-		log.Printf("Server starting on port %s...", cfg.Port)
+		logger.Infof("Server starting on port %s...", cfg.Port)
 		err = httpServer.ListenAndServe()
 		if err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server failed: %v", err)
+			logger.Fatalf("Server failed: %v", err)
 		}
 
 		// Wait for server context to be completed
 		<-serverCtx.Done()
-		log.Println("Server stopped gracefully.")
+		logger.Info("Server stopped gracefully.")
 	},
 }
 

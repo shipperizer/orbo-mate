@@ -6,12 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"regexp"
 
 	"github.com/google/go-github/v60/github"
 	"github.com/shipperizer/orbo-mate/pkg/config"
+	"github.com/shipperizer/orbo-mate/pkg/logger"
 	"golang.org/x/oauth2"
 )
 
@@ -49,7 +49,7 @@ func (r *Reviewer) ProcessComment(ctx context.Context, event *github.IssueCommen
 	repoName := event.GetRepo().GetName()
 	prNumber := event.GetIssue().GetNumber()
 
-	log.Printf("Triggered review for PR #%d using model: %s", prNumber, targetModel)
+	logger.Infof("Triggered review for PR #%d using model: %s", prNumber, targetModel)
 
 	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: r.cfg.GitHubToken})
 	ctxWithClient := context.WithValue(ctx, oauth2.HTTPClient, r.httpClient)
@@ -58,14 +58,14 @@ func (r *Reviewer) ProcessComment(ctx context.Context, event *github.IssueCommen
 
 	diffData, err := r.FetchPRDiff(ctx, tc, repoOwner, repoName, prNumber)
 	if err != nil {
-		log.Printf("Error fetching PR diff: %v", err)
+		logger.Errorf("Error fetching PR diff: %v", err)
 		r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, "❌ Failed to fetch PR diff for review.")
 		return
 	}
 
 	reviewOutput, err := r.GetOpenRouterReview(ctx, targetModel, diffData)
 	if err != nil {
-		log.Printf("OpenRouter API error: %v", err)
+		logger.Errorf("OpenRouter API error: %v", err)
 		r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, "❌ Failed to generate review from OpenRouter.")
 		return
 	}
@@ -175,6 +175,6 @@ func (r *Reviewer) PostComment(ctx context.Context, client *github.Client, owner
 	comment := &github.IssueComment{Body: github.String(message)}
 	_, _, err := client.Issues.CreateComment(ctx, owner, repo, prNumber, comment)
 	if err != nil {
-		log.Printf("Failed to post comment to PR #%d: %v", prNumber, err)
+		logger.Errorf("Failed to post comment to PR #%d: %v", prNumber, err)
 	}
 }
