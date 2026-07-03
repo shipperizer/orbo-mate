@@ -40,4 +40,10 @@ spec:
             name: orbo-mate-config
         - secretRef:
             name: orbo-mate-secret
+        volumeMounts:
+        - name: dummy-volume
+          mountPath: /etc/dummy
+      volumes:
+      - name: dummy-volume
+        emptyDir: {}
 

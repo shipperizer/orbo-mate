@@ -4,12 +4,27 @@ metadata:
   name: orbo-mate-gateway
   labels:
     app: orbo-mate
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-staging"
 spec:
   gatewayClassName: public-gateway
   listeners:
   - name: http
     protocol: HTTP
     port: 80
+    hostname: "dummy.local"
+    allowedRoutes:
+      namespaces:
+        from: Same
+  - name: https
+    protocol: HTTPS
+    port: 443
+    hostname: "dummy.local"
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - name: orbo-mate-tls
+        kind: Secret
     allowedRoutes:
       namespaces:
         from: Same
@@ -23,6 +38,8 @@ metadata:
 spec:
   parentRefs:
   - name: orbo-mate-gateway
+  hostnames:
+  - "dummy.local"
   rules:
   - matches:
     - path:
