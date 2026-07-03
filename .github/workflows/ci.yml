@@ -26,6 +26,12 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
 
+      - name: Install mockgen
+        run: go install go.uber.org/mock/mockgen@v0.6.0
+
+      - name: Run go generate for mocks
+        run: go generate ./...
+
       - name: Run fmt check
         run: make fmt
 
