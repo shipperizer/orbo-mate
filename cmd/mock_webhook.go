@@ -23,6 +23,7 @@ var (
 	modelName string
 	serverURL string
 	customMsg string
+	orgName   string
 )
 
 var mockWebhookCmd = &cobra.Command{
@@ -59,6 +60,11 @@ var mockWebhookCmd = &cobra.Command{
 
 		repoURL := fmt.Sprintf("https://api.github.com/repos/%s/%s", owner, repo)
 
+		finalOrg := orgName
+		if finalOrg == "" {
+			finalOrg = owner
+		}
+
 		// Create mock issue comment event payload
 		event := github.IssueCommentEvent{
 			Action: github.String("created"),
@@ -76,6 +82,9 @@ var mockWebhookCmd = &cobra.Command{
 					Login: github.String(owner),
 				},
 				URL: github.String(repoURL),
+			},
+			Organization: &github.Organization{
+				Login: github.String(finalOrg),
 			},
 		}
 
@@ -97,7 +106,7 @@ var mockWebhookCmd = &cobra.Command{
 		req.Header.Set("X-Hub-Signature-256", sig)
 
 		fmt.Printf("Sending mock webhook event to %s...\n", serverURL)
-		fmt.Printf("PR URL: %s (Owner: %s, Repo: %s, PR: #%d)\n", prURL, owner, repo, prNum)
+		fmt.Printf("PR URL: %s (Owner: %s, Repo: %s, PR: #%d, Org: %s)\n", prURL, owner, repo, prNum, finalOrg)
 		fmt.Printf("Comment body: %q\n", commentBody)
 
 		client := &http.Client{}
@@ -146,6 +155,7 @@ func init() {
 	mockWebhookCmd.Flags().StringVarP(&modelName, "model", "m", "meta-llama/llama-3.1-70b-instruct", "The target review model")
 	mockWebhookCmd.Flags().StringVarP(&serverURL, "server-url", "s", "http://localhost:8080/webhook", "The local server webhook URL")
 	mockWebhookCmd.Flags().StringVarP(&customMsg, "comment", "c", "", "Use a custom comment body instead of the default review command")
+	mockWebhookCmd.Flags().StringVarP(&orgName, "org", "o", "", "Override the GitHub organization login (defaults to repository owner)")
 
 	mockWebhookCmd.MarkFlagRequired("pr-url")
 	rootCmd.AddCommand(mockWebhookCmd)
