@@ -4,6 +4,9 @@ metadata:
   name: orbo-mate
 build:
   platforms: ["linux/amd64", "linux/arm64"]
+  local:
+    useDockerCLI: true
+    useBuildkit: true
   artifacts:
     - image: orbo-mate
       docker:

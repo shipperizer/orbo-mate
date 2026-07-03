@@ -63,10 +63,10 @@ jobs:
           cache: true
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Install Skaffold
         run: |
@@ -83,9 +83,10 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and Push with Skaffold
+        env:
+          DOCKER_BUILDKIT: 1
+          SKAFFOLD_DEFAULT_REPO: ghcr.io/shipperizer
         run: |
           skaffold build \
             --platform=linux/amd64,linux/arm64 \
-            --default-repo=ghcr.io/${{ github.repository }} \
             --push=${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
-
