@@ -1,4 +1,4 @@
-.PHONY: build build-arm64 test test-short vet fmt mock
+.PHONY: build build-arm64 test test-short vet fmt mock generate
 
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
@@ -20,6 +20,10 @@ vet:
 
 fmt:
 	go fmt ./...
+
+generate:
+	go install go.uber.org/mock/mockgen@v0.6.0
+	go generate ./...
 
 mock:
 	go run main.go mock-webhook --pr-url $(url)
