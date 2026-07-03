@@ -38,6 +38,13 @@ jobs:
       - name: Run vet
         run: make vet
 
+      - name: Start Podman API service
+        run: |
+          sudo mkdir -p /run/user/1000/podman
+          sudo chown -R $(whoami) /run/user/1000/podman
+          BUILDPLATFORM=linux/amd64 podman system service --time=0 unix:///run/user/1000/podman/podman.sock &
+          sleep 2
+
       - name: Run tests with race detector
         run: make test
 
