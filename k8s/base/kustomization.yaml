@@ -6,4 +6,5 @@ resources:
   - configmap.yaml
   - secret.yaml
   - serviceaccount.yaml
+  - gateway-api.yaml
 
