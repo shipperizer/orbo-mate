@@ -1,6 +1,5 @@
 # Ignore version control
-.git
-.gitignore
+
 
 # Ignore GitHub Actions and agent configs
 .github

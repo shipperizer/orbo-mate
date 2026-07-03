@@ -4,10 +4,10 @@ GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 
 build:
-	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -v -o orbo-mate main.go
+	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -v -o orbo-mate .
 
 build-arm64:
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -v -o orbo-mate-arm64 main.go
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -v -o orbo-mate-arm64 .
 
 test:
 	go test -race ./...
