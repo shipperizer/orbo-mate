@@ -20,13 +20,32 @@ var (
 	activeLokiWriter *lokiWriter
 )
 
+func parseLogLevel() zapcore.Level {
+	levelStr := os.Getenv("LOG_LEVEL")
+	switch levelStr {
+	case "debug", "DEBUG":
+		return zapcore.DebugLevel
+	case "info", "INFO", "":
+		return zapcore.InfoLevel
+	case "warn", "WARN", "warning", "WARNING":
+		return zapcore.WarnLevel
+	case "error", "ERROR":
+		return zapcore.ErrorLevel
+	case "fatal", "FATAL":
+		return zapcore.FatalLevel
+	default:
+		return zapcore.InfoLevel
+	}
+}
+
 func init() {
+	level := parseLogLevel()
 	// Initialize with a default production logger so it's never nil
 	encoderConfig := zap.NewProductionEncoderConfig()
 	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 	jsonEncoder := zapcore.NewJSONEncoder(encoderConfig)
 	stdoutSyncer := zapcore.Lock(os.Stdout)
-	core := zapcore.NewCore(jsonEncoder, stdoutSyncer, zap.InfoLevel)
+	core := zapcore.NewCore(jsonEncoder, stdoutSyncer, level)
 	Log = zap.New(core)
 	Sugar = Log.Sugar()
 }
@@ -34,6 +53,7 @@ func init() {
 // Init initializes the global logger package with stdout JSON logging and optional Loki exporter.
 func Init() {
 	once.Do(func() {
+		level := parseLogLevel()
 		encoderConfig := zap.NewProductionEncoderConfig()
 		encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 		jsonEncoder := zapcore.NewJSONEncoder(encoderConfig)
@@ -41,7 +61,7 @@ func Init() {
 		stdoutSyncer := zapcore.Lock(os.Stdout)
 
 		var cores []zapcore.Core
-		cores = append(cores, zapcore.NewCore(jsonEncoder, stdoutSyncer, zap.InfoLevel))
+		cores = append(cores, zapcore.NewCore(jsonEncoder, stdoutSyncer, level))
 
 		// Check for Loki endpoint
 		lokiURL := os.Getenv("LOKI_ENDPOINT")
@@ -53,7 +73,7 @@ func Init() {
 			lokiWriter := newLokiWriter(lokiURL)
 			activeLokiWriter = lokiWriter
 			go lokiWriter.start()
-			cores = append(cores, zapcore.NewCore(jsonEncoder, lokiWriter, zap.InfoLevel))
+			cores = append(cores, zapcore.NewCore(jsonEncoder, lokiWriter, level))
 		}
 
 		combinedCore := zapcore.NewTee(cores...)
