@@ -12,6 +12,9 @@ import (
 	"github.com/google/go-github/v60/github"
 	"github.com/shipperizer/orbo-mate/pkg/config"
 	"github.com/shipperizer/orbo-mate/pkg/logger"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"golang.org/x/oauth2"
 )
 
@@ -121,7 +124,18 @@ type OpenRouterResponse struct {
 
 // GetOpenRouterReview calls OpenRouter API to get code review recommendations.
 func (r *Reviewer) GetOpenRouterReview(ctx context.Context, model, diff string) (string, error) {
+	tracer := otel.Tracer("orbo-mate")
+	ctx, span := tracer.Start(ctx, "GetOpenRouterReview")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("model", model),
+		attribute.Int("diff_length", len(diff)),
+	)
+
 	apiURL := "https://openrouter.ai/api/v1/chat/completions"
+
+	logger.Infof("Sending request to OpenRouter (Model: %s, Diff Length: %d bytes)...", model, len(diff))
 
 	prompt := fmt.Sprintf("%s\n\n```diff\n%s\n```", r.cfg.ContextSentence, diff)
 
@@ -134,11 +148,17 @@ func (r *Reviewer) GetOpenRouterReview(ctx context.Context, model, diff string) 
 
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		logger.Errorf("Failed to marshal OpenRouter payload: %v", err)
 		return "", err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonData))
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		logger.Errorf("Failed to create OpenRouter HTTP request: %v", err)
 		return "", err
 	}
 
@@ -149,25 +169,44 @@ func (r *Reviewer) GetOpenRouterReview(ctx context.Context, model, diff string) 
 
 	resp, err := r.httpClient.Do(req)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		logger.Errorf("OpenRouter HTTP request failed: %v", err)
 		return "", err
 	}
 	defer resp.Body.Close()
 
+	logger.Infof("Received response from OpenRouter (Status: %s, Code: %d)", resp.Status, resp.StatusCode)
+
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("openrouter error status %d: %s", resp.StatusCode, string(bodyBytes))
+		err = fmt.Errorf("openrouter error status %d: %s", resp.StatusCode, string(bodyBytes))
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		logger.Errorf("OpenRouter API request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
+		return "", err
 	}
 
 	var orResp OpenRouterResponse
 	if err := json.NewDecoder(resp.Body).Decode(&orResp); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		logger.Errorf("Failed to decode OpenRouter response JSON: %v", err)
 		return "", err
 	}
 
 	if len(orResp.Choices) > 0 {
-		return orResp.Choices[0].Message.Content, nil
+		content := orResp.Choices[0].Message.Content
+		logger.Infof("OpenRouter API call completed successfully. Received review (length: %d characters)", len(content))
+		span.SetStatus(codes.Ok, "Review fetched successfully")
+		return content, nil
 	}
 
-	return "", fmt.Errorf("empty choice array returned from AI model")
+	err = fmt.Errorf("empty choice array returned from AI model")
+	span.RecordError(err)
+	span.SetStatus(codes.Error, err.Error())
+	logger.Errorf("OpenRouter API error: %v", err)
+	return "", err
 }
 
 // PostComment posts a comment to the specified PR thread.
