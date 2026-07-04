@@ -1,0 +1,16 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    deployment:
+      replicas: 0
+    providers:
+      kubernetesGateway:
+        enabled: false
+      kubernetesIngress:
+        enabled: false
+    service:
+      type: ClusterIP
