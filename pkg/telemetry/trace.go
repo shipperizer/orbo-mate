@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"os"
 
@@ -31,7 +32,7 @@ func InitTracer(ctx context.Context) (func(context.Context) error, error) {
 		}
 	} else {
 		// Default to stdouttrace
-		exporter, err = stdouttrace.New(stdouttrace.WithPrettyPrint())
+		exporter, err = stdouttrace.New(stdouttrace.WithWriter(io.Discard))
 		if err != nil {
 			return nil, err
 		}
