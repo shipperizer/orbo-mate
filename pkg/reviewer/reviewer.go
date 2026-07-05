@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strings"
 
 	"github.com/google/go-github/v60/github"
 	"github.com/shipperizer/orbo-mate/pkg/config"
@@ -37,44 +38,75 @@ func NewReviewer(cfg *config.Config, httpClient *http.Client) *Reviewer {
 
 // ProcessComment checks if a comment triggers the review bot and runs the review process.
 func (r *Reviewer) ProcessComment(ctx context.Context, event *github.IssueCommentEvent) {
-	commentBody := event.GetComment().GetBody()
-
-	pattern := fmt.Sprintf(`%s\s+review\s+with\s+([a-zA-Z0-9\-\/:_]+)`, regexp.QuoteMeta(r.cfg.BotName))
-	re := regexp.MustCompile(pattern)
-	matches := re.FindStringSubmatch(commentBody)
-
-	if len(matches) < 2 {
+	if event == nil || event.GetIssue() == nil {
 		return
 	}
-
-	targetModel := matches[1]
+	commentBody := event.GetComment().GetBody()
 	repoOwner := event.GetRepo().GetOwner().GetLogin()
 	repoName := event.GetRepo().GetName()
 	prNumber := event.GetIssue().GetNumber()
 
-	logger.Infof("Triggered review for PR #%d using model: %s", prNumber, targetModel)
+	pattern := fmt.Sprintf(`%s\s+review\s+with\s+([a-zA-Z0-9\-\/:_]+)`, regexp.QuoteMeta(r.cfg.BotName))
+	re := regexp.MustCompile(pattern)
+	matches := re.FindStringSubmatch(commentBody)
 
 	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: r.cfg.GitHubToken})
 	ctxWithClient := context.WithValue(ctx, oauth2.HTTPClient, r.httpClient)
 	tc := oauth2.NewClient(ctxWithClient, ts)
 	ghClient := github.NewClient(tc)
 
-	diffData, err := r.FetchPRDiff(ctx, tc, repoOwner, repoName, prNumber)
-	if err != nil {
-		logger.Errorf("Error fetching PR diff: %v", err)
-		r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, "❌ Failed to fetch PR diff for review.")
-		return
+	targetModel := r.cfg.DefaultModel
+	if len(matches) >= 2 {
+		targetModel = matches[1]
 	}
 
-	reviewOutput, err := r.GetOpenRouterReview(ctx, targetModel, diffData)
-	if err != nil {
-		logger.Errorf("OpenRouter API error: %v", err)
-		r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, "❌ Failed to generate review from OpenRouter.")
-		return
-	}
+	if event.GetIssue().IsPullRequest() {
+		if len(matches) >= 2 {
+			logger.Infof("Triggered review for PR #%d using model: %s", prNumber, targetModel)
 
-	responseBlock := fmt.Sprintf("### 🤖 Automated Review by %s\n*Model used: `%s`*\n\n%s", r.cfg.BotName, targetModel, reviewOutput)
-	r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, responseBlock)
+			diffData, err := r.FetchPRDiff(ctx, tc, repoOwner, repoName, prNumber)
+			if err != nil {
+				logger.Errorf("Error fetching PR diff: %v", err)
+				r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, "❌ Failed to fetch PR diff for review.")
+				return
+			}
+
+			reviewOutput, err := r.GetOpenRouterReview(ctx, targetModel, diffData)
+			if err != nil {
+				logger.Errorf("OpenRouter API error: %v", err)
+				r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, "❌ Failed to generate review from OpenRouter.")
+				return
+			}
+
+			responseBlock := fmt.Sprintf("### 🤖 Automated Review by %s\n*Model used: `%s`*\n\n%s", r.cfg.BotName, targetModel, reviewOutput)
+			r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, responseBlock)
+		} else {
+			logger.Infof("Triggered chat response for PR #%d using model: %s", prNumber, targetModel)
+			prompt := fmt.Sprintf("A user tagged you in a comment on PR #%d.\nTitle: %s\nComment: %s\n\nPlease reply directly to their query.", prNumber, event.GetIssue().GetTitle(), commentBody)
+			response, err := r.Chat(ctx, targetModel, prompt)
+			if err != nil {
+				logger.Errorf("OpenRouter Chat error: %v", err)
+				r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, "❌ Failed to generate response for the comment.")
+				return
+			}
+
+			responseBlock := fmt.Sprintf("### 🤖 Automated Response by %s\n\n%s", r.cfg.BotName, response)
+			r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, responseBlock)
+		}
+	} else {
+		logger.Infof("Triggered issue comment response for issue #%d using model: %s", prNumber, targetModel)
+
+		prompt := fmt.Sprintf("A user tagged you in a comment on issue #%d.\nTitle: %s\nComment: %s\n\nPlease reply directly to their query.", prNumber, event.GetIssue().GetTitle(), commentBody)
+		response, err := r.Chat(ctx, targetModel, prompt)
+		if err != nil {
+			logger.Errorf("OpenRouter Chat error: %v", err)
+			r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, "❌ Failed to generate response for the comment.")
+			return
+		}
+
+		responseBlock := fmt.Sprintf("### 🤖 Automated Response by %s\n\n%s", r.cfg.BotName, response)
+		r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, responseBlock)
+	}
 }
 
 // FetchPRDiff retrieves the unified diff from the GitHub API.
@@ -120,6 +152,171 @@ type OpenRouterResponse struct {
 	Choices []struct {
 		Message OpenRouterMessage `json:"message"`
 	} `json:"choices"`
+}
+
+type OpenRouterErrorResponse struct {
+	Error struct {
+		Message  string      `json:"message"`
+		Code     interface{} `json:"code"`
+		Metadata interface{} `json:"metadata,omitempty"`
+	} `json:"error"`
+}
+
+// logThoroughOpenRouterError logs a thorough report of an OpenRouter API error response,
+// including status codes, headers, and the full request payload/context.
+func logThoroughOpenRouterError(ctx context.Context, resp *http.Response, requestPayload []byte) error {
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		bodyBytes = []byte(fmt.Sprintf("<failed to read body: %v>", err))
+	}
+
+	// 1. Redact Authorization Header in request for safety
+	reqHeaders := make(map[string]string)
+	if resp.Request != nil {
+		for k, v := range resp.Request.Header {
+			if strings.ToLower(k) == "authorization" {
+				reqHeaders[k] = "Bearer <redacted>"
+			} else {
+				reqHeaders[k] = strings.Join(v, ", ")
+			}
+		}
+	}
+
+	// 2. Format Response Headers
+	respHeaders := make(map[string]string)
+	for k, v := range resp.Header {
+		respHeaders[k] = strings.Join(v, ", ")
+	}
+
+	// 3. Attempt to Parse JSON Error response
+	var parsedError string
+	var errResp OpenRouterErrorResponse
+	if err := json.Unmarshal(bodyBytes, &errResp); err == nil && errResp.Error.Message != "" {
+		parsedError = fmt.Sprintf("Code: %v, Message: %q, Metadata: %+v", errResp.Error.Code, errResp.Error.Message, errResp.Error.Metadata)
+	} else {
+		parsedError = "<could not parse structured JSON error>"
+	}
+
+	// 4. Log everything in a highly thorough format
+	logger.Errorf("=== OpenRouter API Error Report ===")
+	if resp.Request != nil && resp.Request.URL != nil {
+		logger.Errorf("Request URL: %s", resp.Request.URL.String())
+	}
+	logger.Errorf("Request Headers: %+v", reqHeaders)
+	logger.Errorf("Request Payload: %s", string(requestPayload))
+	logger.Errorf("Response Status: %s (Code: %d)", resp.Status, resp.StatusCode)
+	logger.Errorf("Response Headers: %+v", respHeaders)
+	logger.Errorf("Raw Response Body: %s", string(bodyBytes))
+	logger.Errorf("Parsed OpenRouter Error: %s", parsedError)
+	logger.Errorf("==================================")
+
+	// Return a clean error representing the failure
+	if errResp.Error.Message != "" {
+		return fmt.Errorf("openrouter error status %d (code %v): %s", resp.StatusCode, errResp.Error.Code, errResp.Error.Message)
+	}
+	return fmt.Errorf("openrouter error status %d: %s", resp.StatusCode, string(bodyBytes))
+}
+
+// ProcessIssueAssigned processes assigned issue events by sending the description to OpenRouter Chat and replying on the thread.
+func (r *Reviewer) ProcessIssueAssigned(ctx context.Context, event *github.IssuesEvent) {
+	repoOwner := event.GetRepo().GetOwner().GetLogin()
+	repoName := event.GetRepo().GetName()
+	issueNumber := event.GetIssue().GetNumber()
+	issueTitle := event.GetIssue().GetTitle()
+	issueBody := event.GetIssue().GetBody()
+
+	logger.Infof("Triggered response for assigned issue #%d", issueNumber)
+
+	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: r.cfg.GitHubToken})
+	ctxWithClient := context.WithValue(ctx, oauth2.HTTPClient, r.httpClient)
+	tc := oauth2.NewClient(ctxWithClient, ts)
+	ghClient := github.NewClient(tc)
+
+	prompt := fmt.Sprintf("You have been assigned to this GitHub issue.\nTitle: %s\nDescription: %s\n\nPlease suggest how to solve or address this issue.", issueTitle, issueBody)
+	response, err := r.Chat(ctx, r.cfg.DefaultModel, prompt)
+	if err != nil {
+		logger.Errorf("OpenRouter Chat error: %v", err)
+		r.PostComment(ctx, ghClient, repoOwner, repoName, issueNumber, "❌ Failed to generate response for assigned issue.")
+		return
+	}
+
+	responseBlock := fmt.Sprintf("### 🤖 Automated Response by %s\n\n%s", r.cfg.BotName, response)
+	r.PostComment(ctx, ghClient, repoOwner, repoName, issueNumber, responseBlock)
+}
+
+// ProcessPRAssigned automatically reviews a PR with the default model when assigned.
+func (r *Reviewer) ProcessPRAssigned(ctx context.Context, event *github.PullRequestEvent) {
+	repoOwner := event.GetRepo().GetOwner().GetLogin()
+	repoName := event.GetRepo().GetName()
+	prNumber := event.GetPullRequest().GetNumber()
+
+	logger.Infof("Triggered review for assigned PR #%d using default model: %s", prNumber, r.cfg.DefaultModel)
+
+	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: r.cfg.GitHubToken})
+	ctxWithClient := context.WithValue(ctx, oauth2.HTTPClient, r.httpClient)
+	tc := oauth2.NewClient(ctxWithClient, ts)
+	ghClient := github.NewClient(tc)
+
+	diffData, err := r.FetchPRDiff(ctx, tc, repoOwner, repoName, prNumber)
+	if err != nil {
+		logger.Errorf("Error fetching PR diff: %v", err)
+		r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, "❌ Failed to fetch PR diff for review.")
+		return
+	}
+
+	reviewOutput, err := r.GetOpenRouterReview(ctx, r.cfg.DefaultModel, diffData)
+	if err != nil {
+		logger.Errorf("OpenRouter API error: %v", err)
+		r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, "❌ Failed to generate review from OpenRouter.")
+		return
+	}
+
+	responseBlock := fmt.Sprintf("### 🤖 Automated Review by %s\n*Model used: `%s` (Default)*\n\n%s", r.cfg.BotName, r.cfg.DefaultModel, reviewOutput)
+	r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, responseBlock)
+}
+
+// ProcessPRReviewComment processes PR review comments by querying Chat with full diff/comment context.
+func (r *Reviewer) ProcessPRReviewComment(ctx context.Context, event *github.PullRequestReviewCommentEvent) {
+	commentBody := event.GetComment().GetBody()
+	repoOwner := event.GetRepo().GetOwner().GetLogin()
+	repoName := event.GetRepo().GetName()
+	prNumber := event.GetPullRequest().GetNumber()
+
+	pattern := fmt.Sprintf(`%s\s+review\s+with\s+([a-zA-Z0-9\-\/:_]+)`, regexp.QuoteMeta(r.cfg.BotName))
+	re := regexp.MustCompile(pattern)
+	matches := re.FindStringSubmatch(commentBody)
+
+	var targetModel string
+	if len(matches) >= 2 {
+		targetModel = matches[1]
+	} else {
+		targetModel = r.cfg.DefaultModel
+	}
+
+	logger.Infof("Triggered PR review comment response for PR #%d using model: %s", prNumber, targetModel)
+
+	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: r.cfg.GitHubToken})
+	ctxWithClient := context.WithValue(ctx, oauth2.HTTPClient, r.httpClient)
+	tc := oauth2.NewClient(ctxWithClient, ts)
+	ghClient := github.NewClient(tc)
+
+	diffData, err := r.FetchPRDiff(ctx, tc, repoOwner, repoName, prNumber)
+	if err != nil {
+		logger.Errorf("Error fetching PR diff: %v", err)
+		r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, "❌ Failed to fetch PR diff for review.")
+		return
+	}
+
+	prompt := fmt.Sprintf("A user asked: \"%s\" on the following diff. Please answer their question or review the code:\n\n%s", commentBody, diffData)
+	response, err := r.Chat(ctx, targetModel, prompt)
+	if err != nil {
+		logger.Errorf("OpenRouter Chat error: %v", err)
+		r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, "❌ Failed to generate response from OpenRouter.")
+		return
+	}
+
+	responseBlock := fmt.Sprintf("### 🤖 Automated Response by %s\n\n%s", r.cfg.BotName, response)
+	r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, responseBlock)
 }
 
 // GetOpenRouterReview calls OpenRouter API to get code review recommendations.
@@ -179,11 +376,9 @@ func (r *Reviewer) GetOpenRouterReview(ctx context.Context, model, diff string) 
 	logger.Infof("Received response from OpenRouter (Status: %s, Code: %d)", resp.Status, resp.StatusCode)
 
 	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		err = fmt.Errorf("openrouter error status %d: %s", resp.StatusCode, string(bodyBytes))
+		err = logThoroughOpenRouterError(ctx, resp, jsonData)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		logger.Errorf("OpenRouter API request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
 		return "", err
 	}
 

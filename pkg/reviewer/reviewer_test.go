@@ -129,7 +129,8 @@ func TestReviewer_ProcessComment_Success(t *testing.T) {
 			},
 		},
 		Issue: &github.Issue{
-			Number: github.Int(123),
+			Number:           github.Int(123),
+			PullRequestLinks: &github.PullRequestLinks{},
 		},
 	}
 
@@ -192,7 +193,8 @@ func TestReviewer_ProcessComment_FetchDiffError(t *testing.T) {
 			},
 		},
 		Issue: &github.Issue{
-			Number: github.Int(123),
+			Number:           github.Int(123),
+			PullRequestLinks: &github.PullRequestLinks{},
 		},
 	}
 
@@ -255,7 +257,8 @@ func TestReviewer_ProcessComment_OpenRouterError(t *testing.T) {
 			},
 		},
 		Issue: &github.Issue{
-			Number: github.Int(123),
+			Number:           github.Int(123),
+			PullRequestLinks: &github.PullRequestLinks{},
 		},
 	}
 
@@ -321,3 +324,306 @@ func TestReviewer_Chat_SuccessAndError(t *testing.T) {
 		t.Fatal("Expected error from HTTP 500, got nil")
 	}
 }
+
+func TestReviewer_ProcessIssueAssigned(t *testing.T) {
+	cfg := &config.Config{
+		BotName:       "@ai-bot",
+		GitHubToken:   "gh-token",
+		OpenRouterKey: "or-key",
+		DefaultModel:  "meta-llama/llama-3.1-70b-instruct",
+	}
+
+	var calledOpenRouter, calledPostComment bool
+
+	client := &http.Client{
+		Transport: mockRoundTripper(func(req *http.Request) (*http.Response, error) {
+			if req.Method == "POST" && req.URL.Host == "openrouter.ai" {
+				calledOpenRouter = true
+				var openReq OpenRouterRequest
+				_ = json.NewDecoder(req.Body).Decode(&openReq)
+				if openReq.Model != "meta-llama/llama-3.1-70b-instruct" {
+					t.Errorf("Expected model %s, got %q", cfg.DefaultModel, openReq.Model)
+				}
+
+				respPayload := OpenRouterResponse{
+					Choices: []struct {
+						Message OpenRouterMessage `json:"message"`
+					}{
+						{
+							Message: OpenRouterMessage{
+								Role:    "assistant",
+								Content: "Here is how to solve it",
+							},
+						},
+					},
+				}
+				respBytes, _ := json.Marshal(respPayload)
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(bytes.NewBuffer(respBytes)),
+				}, nil
+			}
+
+			if req.Method == "POST" && req.URL.Path == "/repos/my-owner/my-repo/issues/42/comments" {
+				calledPostComment = true
+				var comment github.IssueComment
+				_ = json.NewDecoder(req.Body).Decode(&comment)
+				expectedBody := "### 🤖 Automated Response by @ai-bot\n\nHere is how to solve it"
+				if comment.GetBody() != expectedBody {
+					t.Errorf("Expected body %q, got %q", expectedBody, comment.GetBody())
+				}
+				return &http.Response{
+					StatusCode: http.StatusCreated,
+					Body:       io.NopCloser(bytes.NewBufferString("{}")),
+				}, nil
+			}
+
+			t.Errorf("Unexpected request: %s %s", req.Method, req.URL.String())
+			return &http.Response{StatusCode: 400}, nil
+		}),
+	}
+
+	r := NewReviewer(cfg, client)
+
+	event := &github.IssuesEvent{
+		Action: github.String("assigned"),
+		Issue: &github.Issue{
+			Number: github.Int(42),
+			Title:  github.String("Bug: crash"),
+			Body:   github.String("It crashed on start"),
+		},
+		Repo: &github.Repository{
+			Name: github.String("my-repo"),
+			Owner: &github.User{
+				Login: github.String("my-owner"),
+			},
+		},
+	}
+
+	r.ProcessIssueAssigned(context.Background(), event)
+
+	if !calledOpenRouter {
+		t.Error("Expected OpenRouter Chat to be called")
+	}
+	if !calledPostComment {
+		t.Error("Expected PostComment to be called")
+	}
+}
+
+func TestReviewer_ProcessPRAssigned(t *testing.T) {
+	cfg := &config.Config{
+		BotName:       "@ai-bot",
+		GitHubToken:   "gh-token",
+		OpenRouterKey: "or-key",
+		DefaultModel:  "meta-llama/llama-3.1-70b-instruct",
+	}
+
+	var calledGetDiff, calledOpenRouter, calledPostComment bool
+
+	client := &http.Client{
+		Transport: mockRoundTripper(func(req *http.Request) (*http.Response, error) {
+			if req.Method == "GET" && req.URL.Path == "/repos/my-owner/my-repo/pulls/100" {
+				calledGetDiff = true
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(bytes.NewBufferString("diff --git a/main.go b/main.go")),
+				}, nil
+			}
+
+			if req.Method == "POST" && req.URL.Host == "openrouter.ai" {
+				calledOpenRouter = true
+				var openReq OpenRouterRequest
+				_ = json.NewDecoder(req.Body).Decode(&openReq)
+
+				respPayload := OpenRouterResponse{
+					Choices: []struct {
+						Message OpenRouterMessage `json:"message"`
+					}{
+						{
+							Message: OpenRouterMessage{
+								Role:    "assistant",
+								Content: "PR looks fine",
+							},
+						},
+					},
+				}
+				respBytes, _ := json.Marshal(respPayload)
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(bytes.NewBuffer(respBytes)),
+				}, nil
+			}
+
+			if req.Method == "POST" && req.URL.Path == "/repos/my-owner/my-repo/issues/100/comments" {
+				calledPostComment = true
+				var comment github.IssueComment
+				_ = json.NewDecoder(req.Body).Decode(&comment)
+				expectedBody := "### 🤖 Automated Review by @ai-bot\n*Model used: `meta-llama/llama-3.1-70b-instruct` (Default)*\n\nPR looks fine"
+				if comment.GetBody() != expectedBody {
+					t.Errorf("Expected body %q, got %q", expectedBody, comment.GetBody())
+				}
+				return &http.Response{
+					StatusCode: http.StatusCreated,
+					Body:       io.NopCloser(bytes.NewBufferString("{}")),
+				}, nil
+			}
+
+			t.Errorf("Unexpected request: %s %s", req.Method, req.URL.String())
+			return &http.Response{StatusCode: 400}, nil
+		}),
+	}
+
+	r := NewReviewer(cfg, client)
+
+	event := &github.PullRequestEvent{
+		Action: github.String("assigned"),
+		PullRequest: &github.PullRequest{
+			Number: github.Int(100),
+		},
+		Repo: &github.Repository{
+			Name: github.String("my-repo"),
+			Owner: &github.User{
+				Login: github.String("my-owner"),
+			},
+		},
+	}
+
+	r.ProcessPRAssigned(context.Background(), event)
+
+	if !calledGetDiff {
+		t.Error("Expected FetchPRDiff to be called")
+	}
+	if !calledOpenRouter {
+		t.Error("Expected OpenRouter Review to be called")
+	}
+	if !calledPostComment {
+		t.Error("Expected PostComment to be called")
+	}
+}
+
+func TestReviewer_ProcessPRReviewComment(t *testing.T) {
+	cfg := &config.Config{
+		BotName:       "@ai-bot",
+		GitHubToken:   "gh-token",
+		OpenRouterKey: "or-key",
+		DefaultModel:  "meta-llama/llama-3.1-70b-instruct",
+	}
+
+	var calledGetDiff, calledOpenRouter, calledPostComment bool
+
+	client := &http.Client{
+		Transport: mockRoundTripper(func(req *http.Request) (*http.Response, error) {
+			if req.Method == "GET" && req.URL.Path == "/repos/my-owner/my-repo/pulls/200" {
+				calledGetDiff = true
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(bytes.NewBufferString("diff --git a/foo b/foo")),
+				}, nil
+			}
+
+			if req.Method == "POST" && req.URL.Host == "openrouter.ai" {
+				calledOpenRouter = true
+				var openReq OpenRouterRequest
+				_ = json.NewDecoder(req.Body).Decode(&openReq)
+				if openReq.Model != "anthropic/claude-3" {
+					t.Errorf("Expected model anthropic/claude-3, got %q", openReq.Model)
+				}
+
+				respPayload := OpenRouterResponse{
+					Choices: []struct {
+						Message OpenRouterMessage `json:"message"`
+					}{
+						{
+							Message: OpenRouterMessage{
+								Role:    "assistant",
+								Content: "This looks like a comment reply",
+							},
+						},
+					},
+				}
+				respBytes, _ := json.Marshal(respPayload)
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(bytes.NewBuffer(respBytes)),
+				}, nil
+			}
+
+			if req.Method == "POST" && req.URL.Path == "/repos/my-owner/my-repo/issues/200/comments" {
+				calledPostComment = true
+				var comment github.IssueComment
+				_ = json.NewDecoder(req.Body).Decode(&comment)
+				expectedBody := "### 🤖 Automated Response by @ai-bot\n\nThis looks like a comment reply"
+				if comment.GetBody() != expectedBody {
+					t.Errorf("Expected body %q, got %q", expectedBody, comment.GetBody())
+				}
+				return &http.Response{
+					StatusCode: http.StatusCreated,
+					Body:       io.NopCloser(bytes.NewBufferString("{}")),
+				}, nil
+			}
+
+			t.Errorf("Unexpected request: %s %s", req.Method, req.URL.String())
+			return &http.Response{StatusCode: 400}, nil
+		}),
+	}
+
+	r := NewReviewer(cfg, client)
+
+	event := &github.PullRequestReviewCommentEvent{
+		Action: github.String("created"),
+		Comment: &github.PullRequestComment{
+			Body: github.String("@ai-bot review with anthropic/claude-3"),
+		},
+		PullRequest: &github.PullRequest{
+			Number: github.Int(200),
+		},
+		Repo: &github.Repository{
+			Name: github.String("my-repo"),
+			Owner: &github.User{
+				Login: github.String("my-owner"),
+			},
+		},
+	}
+
+	r.ProcessPRReviewComment(context.Background(), event)
+
+	if !calledGetDiff {
+		t.Error("Expected FetchPRDiff to be called")
+	}
+	if !calledOpenRouter {
+		t.Error("Expected OpenRouter Chat to be called")
+	}
+	if !calledPostComment {
+		t.Error("Expected PostComment to be called")
+	}
+}
+
+func TestReviewer_ThoroughErrorLogging(t *testing.T) {
+
+	// Craft a mock request to get headers redacted
+	req, _ := http.NewRequest("POST", "https://openrouter.ai/api/v1/chat/completions", nil)
+	req.Header.Set("Authorization", "Bearer secret-or-key")
+	req.Header.Set("Content-Type", "application/json")
+
+	// Craft mock response
+	errorJSON := `{"error":{"message":"Model not found","code":404,"metadata":{"id":"model_xyz"}}}`
+	resp := &http.Response{
+		Status:     "404 Not Found",
+		StatusCode: http.StatusNotFound,
+		Header:     make(http.Header),
+		Body:       io.NopCloser(bytes.NewBufferString(errorJSON)),
+		Request:    req,
+	}
+	resp.Header.Set("X-RateLimit-Limit", "100")
+
+	err := logThoroughOpenRouterError(context.Background(), resp, []byte(`{"model": "xyz"}`))
+	if err == nil {
+		t.Fatal("Expected logThoroughOpenRouterError to return an error, got nil")
+	}
+
+	expectedErrorStr := "openrouter error status 404 (code 404): Model not found"
+	if err.Error() != expectedErrorStr {
+		t.Errorf("Expected error string %q, got %q", expectedErrorStr, err.Error())
+	}
+}
+

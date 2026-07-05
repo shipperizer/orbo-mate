@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 
 	"github.com/shipperizer/orbo-mate/pkg/logger"
@@ -69,11 +68,9 @@ func (r *Reviewer) Chat(ctx context.Context, model, prompt string) (string, erro
 	logger.Infof("Received chat response from OpenRouter (Status: %s, Code: %d)", resp.Status, resp.StatusCode)
 
 	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		err = fmt.Errorf("openrouter error status %d: %s", resp.StatusCode, string(bodyBytes))
+		err = logThoroughOpenRouterError(ctx, resp, jsonData)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		logger.Errorf("OpenRouter chat request failed with status %d: %s", resp.StatusCode, string(bodyBytes))
 		return "", err
 	}
 
