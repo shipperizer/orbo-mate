@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -21,6 +22,9 @@ import (
 //go:generate mockgen -source=server.go -destination=mocks/mock_reviewer.go -package=mocks
 type CommentProcessor interface {
 	ProcessComment(ctx context.Context, event *github.IssueCommentEvent)
+	ProcessIssueAssigned(ctx context.Context, event *github.IssuesEvent)
+	ProcessPRAssigned(ctx context.Context, event *github.PullRequestEvent)
+	ProcessPRReviewComment(ctx context.Context, event *github.PullRequestReviewCommentEvent)
 }
 
 // Server sets up the routes and dependencies for the webhook server.
@@ -63,12 +67,40 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.router.ServeHTTP(w, r)
 }
 
+func (s *Server) isOrgAllowed(org string) bool {
+	for _, allowedOrg := range s.cfg.AllowedOrgs {
+		if org == allowedOrg {
+			return true
+		}
+	}
+	return false
+}
+
+func cleanBotName(botName string) string {
+	return strings.TrimPrefix(botName, "@")
+}
+
 // handleWebhook handles incoming GitHub webhook requests.
 func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
+	// 1. Enforce JSON Payload
+	contentType := r.Header.Get("Content-Type")
+	if contentType != "application/json" && !strings.HasPrefix(contentType, "application/json;") {
+		logger.Errorf("Invalid Content-Type: %s", contentType)
+		http.Error(w, "Unsupported Media Type", http.StatusUnsupportedMediaType)
+		return
+	}
+
 	payload, err := github.ValidatePayload(r, []byte(s.cfg.WebhookSecret))
 	if err != nil {
 		logger.Errorf("Webhook signature verification failed: %v", err)
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// 2. Validate payload is valid JSON
+	if !json.Valid(payload) {
+		logger.Error("Webhook payload is not valid JSON")
+		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
 
@@ -81,36 +113,77 @@ func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 
 	switch e := event.(type) {
 	case *github.IssueCommentEvent:
-		if e.GetAction() == "created" && e.GetIssue() != nil && e.GetIssue().IsPullRequest() {
-			org := e.GetRepo().GetOwner().GetLogin()
-			
-			// 1. Check if the org is allowed
-			isAllowed := false
-			for _, allowedOrg := range s.cfg.AllowedOrgs {
-				if org == allowedOrg {
-					isAllowed = true
-					break
+		if e.GetAction() == "created" && e.GetIssue() != nil {
+			body := e.GetComment().GetBody()
+			isTagged := strings.Contains(body, s.cfg.BotName) || strings.Contains(body, cleanBotName(s.cfg.BotName))
+			if isTagged {
+				org := e.GetRepo().GetOwner().GetLogin()
+				if !s.isOrgAllowed(org) {
+					logger.Warnf("Ignored comment from unauthorized org: %s", org)
+					w.WriteHeader(http.StatusOK)
+					return
 				}
-			}
 
-			if !isAllowed {
-				logger.Warnf("Ignored comment from unauthorized org: %s", org)
+				if e.GetIssue().GetRepositoryURL() != e.GetRepo().GetURL() {
+					logger.Warnf("Cross-org request detected. Issue Repo: %s, Event Repo: %s", e.GetIssue().GetRepositoryURL(), e.GetRepo().GetURL())
+					w.WriteHeader(http.StatusOK)
+					return
+				}
+
+				s.pool.Submit(func(ctx context.Context) {
+					s.reviewer.ProcessComment(ctx, e)
+				})
+				telemetry.WebhooksProcessedTotal.WithLabelValues("success").Inc()
+			}
+		}
+
+	case *github.IssuesEvent:
+		if e.GetAction() == "assigned" && e.GetAssignee().GetLogin() == cleanBotName(s.cfg.BotName) && e.GetIssue() != nil {
+			org := e.GetRepo().GetOwner().GetLogin()
+			if !s.isOrgAllowed(org) {
+				logger.Warnf("Ignored issue assignment from unauthorized org: %s", org)
 				w.WriteHeader(http.StatusOK)
 				return
 			}
 
-			// 2. Prevent cross-org requests (ensure comment is on the same repo as the issue)
-			if e.GetIssue().GetRepositoryURL() != e.GetRepo().GetURL() {
-				logger.Warnf("Cross-org request detected. Issue Repo: %s, Event Repo: %s", e.GetIssue().GetRepositoryURL(), e.GetRepo().GetURL())
-				w.WriteHeader(http.StatusOK)
-				return
-			}
-
-			// Submit review task to the concurrent worker pool
 			s.pool.Submit(func(ctx context.Context) {
-				s.reviewer.ProcessComment(ctx, e)
+				s.reviewer.ProcessIssueAssigned(ctx, e)
 			})
 			telemetry.WebhooksProcessedTotal.WithLabelValues("success").Inc()
+		}
+
+	case *github.PullRequestEvent:
+		if e.GetAction() == "assigned" && e.GetAssignee().GetLogin() == cleanBotName(s.cfg.BotName) && e.GetPullRequest() != nil {
+			org := e.GetRepo().GetOwner().GetLogin()
+			if !s.isOrgAllowed(org) {
+				logger.Warnf("Ignored pull request assignment from unauthorized org: %s", org)
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+
+			s.pool.Submit(func(ctx context.Context) {
+				s.reviewer.ProcessPRAssigned(ctx, e)
+			})
+			telemetry.WebhooksProcessedTotal.WithLabelValues("success").Inc()
+		}
+
+	case *github.PullRequestReviewCommentEvent:
+		if e.GetAction() == "created" && e.GetPullRequest() != nil {
+			body := e.GetComment().GetBody()
+			isTagged := strings.Contains(body, s.cfg.BotName) || strings.Contains(body, cleanBotName(s.cfg.BotName))
+			if isTagged {
+				org := e.GetRepo().GetOwner().GetLogin()
+				if !s.isOrgAllowed(org) {
+					logger.Warnf("Ignored PR review comment from unauthorized org: %s", org)
+					w.WriteHeader(http.StatusOK)
+					return
+				}
+
+				s.pool.Submit(func(ctx context.Context) {
+					s.reviewer.ProcessPRReviewComment(ctx, e)
+				})
+				telemetry.WebhooksProcessedTotal.WithLabelValues("success").Inc()
+			}
 		}
 	}
 

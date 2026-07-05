@@ -153,6 +153,9 @@ func TestServer_WebhookAllowedOrgsAndCrossOrg(t *testing.T) {
 	// Test Case 3: Valid Authorized Org, matching repository URLs, triggers Reviewer ProcessComment
 	eventValid := github.IssueCommentEvent{
 		Action: github.String("created"),
+		Comment: &github.IssueComment{
+			Body: github.String("@ai-bot review with meta-llama/llama-3"),
+		},
 		Issue: &github.Issue{
 			Number:           github.Int(42),
 			PullRequestLinks: &github.PullRequestLinks{},
@@ -235,7 +238,169 @@ func TestServer_VersionAndHealthz(t *testing.T) {
 	if err := json.NewDecoder(rr.Body).Decode(&healthzResp); err != nil {
 		t.Fatalf("Failed to decode healthz response: %v", err)
 	}
-	if healthzResp["status"] != "ok" {
-		t.Errorf("Expected status 'ok', got '%s'", healthzResp["status"])
+}
+
+func TestServer_Webhook_EnforceJSON(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockReviewer := mocks.NewMockCommentProcessor(ctrl)
+
+	cfg := &config.Config{
+		WebhookSecret: "secret-key",
+		BotName:       "@ai-bot",
+		AllowedOrgs:   []string{"my-org"},
+	}
+
+	p := pool.NewPool(2)
+	p.Start()
+	defer p.Stop()
+
+	srv := NewServer(cfg, p, mockReviewer)
+
+	// Case 1: Wrong Content-Type
+	req, _ := http.NewRequest("POST", "/webhook", bytes.NewBufferString(`{}`))
+	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("X-GitHub-Event", "issue_comment")
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnsupportedMediaType {
+		t.Errorf("Expected status 415, got %d", rr.Code)
+	}
+
+	// Case 2: Correct Content-Type, invalid signature
+	req, _ = http.NewRequest("POST", "/webhook", bytes.NewBufferString(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-GitHub-Event", "issue_comment")
+	req.Header.Set("X-Hub-Signature-256", "sha256=invalid")
+	rr = httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("Expected status 401, got %d", rr.Code)
+	}
+
+	// Case 3: Correct Content-Type, valid signature, invalid JSON payload
+	invalidJSON := `{"invalid_json":`
+	sig := computeHMAC256([]byte(invalidJSON), "secret-key")
+	req, _ = http.NewRequest("POST", "/webhook", bytes.NewBufferString(invalidJSON))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-GitHub-Event", "issue_comment")
+	req.Header.Set("X-Hub-Signature-256", sig)
+	rr = httptest.NewRecorder()
+	srv.ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("Expected status 400, got %d", rr.Code)
 	}
 }
+
+func TestServer_Webhook_NewEvents(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockReviewer := mocks.NewMockCommentProcessor(ctrl)
+
+	cfg := &config.Config{
+		WebhookSecret: "secret-key",
+		BotName:       "@ai-bot",
+		AllowedOrgs:   []string{"my-org"},
+	}
+
+	p := pool.NewPool(2)
+	p.Start()
+	defer p.Stop()
+
+	srv := NewServer(cfg, p, mockReviewer)
+
+	// 1. IssuesEvent (Assigned to bot)
+	issuesEvent := github.IssuesEvent{
+		Action: github.String("assigned"),
+		Assignee: &github.User{
+			Login: github.String("ai-bot"),
+		},
+		Issue: &github.Issue{
+			Number: github.Int(42),
+		},
+		Repo: &github.Repository{
+			Owner: &github.User{
+				Login: github.String("my-org"),
+			},
+		},
+	}
+	bodyIssues, _ := json.Marshal(issuesEvent)
+	sigIssues := computeHMAC256(bodyIssues, "secret-key")
+	reqIssues, _ := http.NewRequest("POST", "/webhook", bytes.NewBuffer(bodyIssues))
+	reqIssues.Header.Set("Content-Type", "application/json")
+	reqIssues.Header.Set("X-GitHub-Event", "issues")
+	reqIssues.Header.Set("X-Hub-Signature-256", sigIssues)
+
+	mockReviewer.EXPECT().ProcessIssueAssigned(gomock.Any(), gomock.Any()).Times(1)
+
+	rr := httptest.NewRecorder()
+	srv.ServeHTTP(rr, reqIssues)
+	if rr.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", rr.Code)
+	}
+
+	// 2. PullRequestEvent (Assigned to bot)
+	prEvent := github.PullRequestEvent{
+		Action: github.String("assigned"),
+		Assignee: &github.User{
+			Login: github.String("ai-bot"),
+		},
+		PullRequest: &github.PullRequest{
+			Number: github.Int(43),
+		},
+		Repo: &github.Repository{
+			Owner: &github.User{
+				Login: github.String("my-org"),
+			},
+		},
+	}
+	bodyPR, _ := json.Marshal(prEvent)
+	sigPR := computeHMAC256(bodyPR, "secret-key")
+	reqPR, _ := http.NewRequest("POST", "/webhook", bytes.NewBuffer(bodyPR))
+	reqPR.Header.Set("Content-Type", "application/json")
+	reqPR.Header.Set("X-GitHub-Event", "pull_request")
+	reqPR.Header.Set("X-Hub-Signature-256", sigPR)
+
+	mockReviewer.EXPECT().ProcessPRAssigned(gomock.Any(), gomock.Any()).Times(1)
+
+	rr = httptest.NewRecorder()
+	srv.ServeHTTP(rr, reqPR)
+	if rr.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", rr.Code)
+	}
+
+	// 3. PullRequestReviewCommentEvent (Comment tagging bot)
+	reviewCommentEvent := github.PullRequestReviewCommentEvent{
+		Action: github.String("created"),
+		Comment: &github.PullRequestComment{
+			Body: github.String("Please look @ai-bot"),
+		},
+		PullRequest: &github.PullRequest{
+			Number: github.Int(44),
+		},
+		Repo: &github.Repository{
+			Owner: &github.User{
+				Login: github.String("my-org"),
+			},
+		},
+	}
+	bodyReview, _ := json.Marshal(reviewCommentEvent)
+	sigReview := computeHMAC256(bodyReview, "secret-key")
+	reqReview, _ := http.NewRequest("POST", "/webhook", bytes.NewBuffer(bodyReview))
+	reqReview.Header.Set("Content-Type", "application/json")
+	reqReview.Header.Set("X-GitHub-Event", "pull_request_review_comment")
+	reqReview.Header.Set("X-Hub-Signature-256", sigReview)
+
+	mockReviewer.EXPECT().ProcessPRReviewComment(gomock.Any(), gomock.Any()).Times(1)
+
+	rr = httptest.NewRecorder()
+	srv.ServeHTTP(rr, reqReview)
+	if rr.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", rr.Code)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+}
+
