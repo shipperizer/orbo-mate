@@ -144,8 +144,9 @@ type OpenRouterMessage struct {
 }
 
 type OpenRouterRequest struct {
-	Model    string              `json:"model"`
-	Messages []OpenRouterMessage `json:"messages"`
+	Model     string              `json:"model"`
+	Messages  []OpenRouterMessage `json:"messages"`
+	MaxTokens int                 `json:"max_tokens,omitempty"`
 }
 
 type OpenRouterResponse struct {
@@ -341,6 +342,7 @@ func (r *Reviewer) GetOpenRouterReview(ctx context.Context, model, diff string) 
 		Messages: []OpenRouterMessage{
 			{Role: "user", Content: prompt},
 		},
+		MaxTokens: r.cfg.MaxTokens,
 	}
 
 	jsonData, err := json.Marshal(payload)

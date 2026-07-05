@@ -33,6 +33,7 @@ func (r *Reviewer) Chat(ctx context.Context, model, prompt string) (string, erro
 		Messages: []OpenRouterMessage{
 			{Role: "user", Content: prompt},
 		},
+		MaxTokens: r.cfg.MaxTokens,
 	}
 
 	jsonData, err := json.Marshal(payload)

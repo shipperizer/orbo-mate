@@ -44,6 +44,9 @@ func TestLoad_Success(t *testing.T) {
 	if cfg.LogLevel != "debug" {
 		t.Errorf("Expected LogLevel to be 'debug', got %s", cfg.LogLevel)
 	}
+	if cfg.MaxTokens != 4096 {
+		t.Errorf("Expected MaxTokens to be 4096, got %d", cfg.MaxTokens)
+	}
 }
 
 func TestLoad_ContextSentenceTruncation(t *testing.T) {

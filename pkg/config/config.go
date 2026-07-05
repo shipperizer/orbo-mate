@@ -18,6 +18,7 @@ type Config struct {
 	ContextSentence string   `envconfig:"CONTEXT_SENTENCE"`
 	AllowedOrgs     []string `envconfig:"ALLOWED_ORGS" required:"true"`
 	LogLevel        string   `envconfig:"LOG_LEVEL" default:"info"`
+	MaxTokens       int      `envconfig:"MAX_TOKENS" default:"4096"`
 }
 
 // DefaultContextSentence is the default prompt context sent to OpenRouter.
