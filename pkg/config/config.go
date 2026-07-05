@@ -17,6 +17,7 @@ type Config struct {
 	Port            string   `envconfig:"PORT" default:"8080"`
 	ContextSentence string   `envconfig:"CONTEXT_SENTENCE"`
 	AllowedOrgs     []string `envconfig:"ALLOWED_ORGS" required:"true"`
+	LogLevel        string   `envconfig:"LOG_LEVEL" default:"info"`
 }
 
 // DefaultContextSentence is the default prompt context sent to OpenRouter.

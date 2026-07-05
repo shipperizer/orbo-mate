@@ -12,11 +12,13 @@ func TestLoad_Success(t *testing.T) {
 	os.Setenv("GITHUB_TOKEN", "token-123")
 	os.Setenv("OPENROUTER_API_KEY", "key-xyz")
 	os.Setenv("ALLOWED_ORGS", "test-org,another-org")
+	os.Setenv("LOG_LEVEL", "debug")
 	defer func() {
 		os.Unsetenv("GITHUB_WEBHOOK_SECRET")
 		os.Unsetenv("GITHUB_TOKEN")
 		os.Unsetenv("OPENROUTER_API_KEY")
 		os.Unsetenv("ALLOWED_ORGS")
+		os.Unsetenv("LOG_LEVEL")
 	}()
 
 	cfg, err := Load()
@@ -38,6 +40,9 @@ func TestLoad_Success(t *testing.T) {
 	}
 	if cfg.ContextSentence != DefaultContextSentence {
 		t.Errorf("Expected ContextSentence to be default, got %s", cfg.ContextSentence)
+	}
+	if cfg.LogLevel != "debug" {
+		t.Errorf("Expected LogLevel to be 'debug', got %s", cfg.LogLevel)
 	}
 }
 

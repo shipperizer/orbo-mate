@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -22,19 +23,20 @@ var serverCmd = &cobra.Command{
 	Short: "Start the webhook server",
 	Long:  `Start the Go HTTP webhook server to listen for GitHub events.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		cfg, err := config.Load()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to load configuration: %v\n", err)
+			os.Exit(1)
+		}
+
 		// Initialize structured logger
-		logger.Init()
+		logger.Init(cfg.LogLevel)
 		defer logger.Shutdown()
 
 		// Initialize OpenTelemetry tracer
 		tpShutdown, err := telemetry.InitTracer(context.Background())
 		if err != nil {
 			logger.Fatalf("Failed to initialize OpenTelemetry tracer: %v", err)
-		}
-
-		cfg, err := config.Load()
-		if err != nil {
-			logger.Fatalf("Failed to load configuration: %v", err)
 		}
 
 		// Create goroutine worker pool with maximum of 100 concurrent workers

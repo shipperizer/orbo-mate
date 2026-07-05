@@ -20,8 +20,10 @@ var (
 	activeLokiWriter *lokiWriter
 )
 
-func parseLogLevel() zapcore.Level {
-	levelStr := os.Getenv("LOG_LEVEL")
+func parseLogLevel(levelStr string) zapcore.Level {
+	if levelStr == "" {
+		levelStr = os.Getenv("LOG_LEVEL")
+	}
 	switch levelStr {
 	case "debug", "DEBUG":
 		return zapcore.DebugLevel
@@ -39,7 +41,7 @@ func parseLogLevel() zapcore.Level {
 }
 
 func init() {
-	level := parseLogLevel()
+	level := parseLogLevel("")
 	// Initialize with a default production logger so it's never nil
 	encoderConfig := zap.NewProductionEncoderConfig()
 	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
@@ -51,9 +53,9 @@ func init() {
 }
 
 // Init initializes the global logger package with stdout JSON logging and optional Loki exporter.
-func Init() {
+func Init(logLevel string) {
 	once.Do(func() {
-		level := parseLogLevel()
+		level := parseLogLevel(logLevel)
 		encoderConfig := zap.NewProductionEncoderConfig()
 		encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 		jsonEncoder := zapcore.NewJSONEncoder(encoderConfig)
