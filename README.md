@@ -4,17 +4,22 @@ Orbo-Mate is an automated GitHub Pull Request reviewer bot written in Go. It lis
 
 ## 🚀 Features
 
-*   **Webhook Server:** Listens for GitHub Issue Comment events.
-*   **Trigger:** Responds to comments like `@ai-bot review with <model>` on PRs.
-*   **AI Code Review:** Integrates with OpenRouter to review code diffs using various LLMs (e.g., Llama 3, GPT-4, etc.).
+*   **Webhook Server:** Handles multi-event webhook dispatching for:
+    *   **Issue Comments:** Responds to comments like `@ai-bot review with <model>` on PRs or issue queries on standard threads.
+    *   **Issue Assignment:** Auto-recommends solutions when the bot is assigned to an Issue.
+    *   **PR Assignment:** Runs an automated code review on PRs when the bot is assigned to a PR.
+    *   **PR Review Comments:** Responds to review-specific thread comments mentioning the bot.
+*   **JSON-Only Payload Enforcement:** Enforces JSON content-types (`application/json`) and strict schema validations (`json.Valid`) to keep the server secure and robust.
+*   **Thorough API Diagnostics:** Intercepts and parses OpenRouter structured errors, printing thorough diagnostic reports while redacting authorization tokens automatically.
+*   **AI Code Review:** Integrates with OpenRouter to review code diffs using various LLMs (e.g., Llama 3, GPT-4, Claude 3, etc.).
 *   **Concurrent Processing:** Uses a goroutine worker pool (max 100 concurrent workers) for handling multiple reviews asynchronously.
 *   **Security Restrictions:** Limits triggers to allowed organizations and prevents cross-organization attacks by validating comment origins.
-*   **Configurable:** Highly customizable via environment variables.
+*   **Configurable:** Highly customizable via environment variables, including runtime log level configurations.
 
 ## 🛠️ Prerequisites
 
 *   Go 1.22+ (preferably 1.26+)
-*   A GitHub Webhook configured for your repository (Content type: `application/json`, Event: `Issue comments`).
+*   A GitHub Webhook configured for your repository (Content type: `application/json`, Events: `Issue comments`, `Issues`, `Pull requests`, `Pull request reviews`, `Pull request review comments`).
 *   A GitHub Personal Access Token (PAT) with repository read and pull request comment write permissions.
 *   An OpenRouter API Key.
 
@@ -32,6 +37,7 @@ The application is configured using environment variables.
 | `BOT_NAME` | The mention handle that triggers the bot. | No | `@ai-bot` |
 | `PORT` | Port for the webhook server to listen on. | No | `8080` |
 | `CONTEXT_SENTENCE` | Custom system prompt for the AI reviewer (max 500 chars). | No | *Standard code review prompt* |
+| `LOG_LEVEL` | Dynamic log level configuration (`debug`, `info`, `warn`, `error`). | No | `info` |
 
 ## 🏃 Running the Application
 
