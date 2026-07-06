@@ -38,6 +38,7 @@ The application is configured using environment variables.
 | `PORT` | Port for the webhook server to listen on. | No | `8080` |
 | `CONTEXT_SENTENCE` | Custom system prompt for the AI reviewer (max 500 chars). | No | *Standard code review prompt* |
 | `LOG_LEVEL` | Dynamic log level configuration (`debug`, `info`, `warn`, `error`). | No | `info` |
+| `MAX_TOKENS` | Maximum tokens requested for OpenRouter API review generation and chat response. Prevents response truncation. | No | `4096` |
 
 ## 🏃 Running the Application
 
