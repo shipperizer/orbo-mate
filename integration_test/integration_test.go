@@ -164,3 +164,86 @@ func TestIntegration_PullRequestEvent(t *testing.T) {
 		t.Errorf("Expected status code 200 OK, got %d", resp.StatusCode)
 	}
 }
+
+func TestIntegration_IssueAssignedEvent(t *testing.T) {
+	// Set up environment variables to support rootless Podman out of the box
+	os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true")
+	if os.Getenv("DOCKER_HOST") == "" {
+		// Set default user-level rootless Podman socket path
+		os.Setenv("DOCKER_HOST", "unix:///run/user/1000/podman/podman.sock")
+	}
+
+	ctx := context.Background()
+
+	// Load anonymized issue assigned payload from testdata file
+	payloadBytes, err := os.ReadFile("testdata/issue_assigned_event.json")
+	if err != nil {
+		t.Fatalf("Failed to read testdata payload: %v", err)
+	}
+
+	// Spin up the local orbo-mate application using the Dockerfile, allowing 'dummy-org' matching our anonymized payload
+	req := testcontainers.ContainerRequest{
+		FromDockerfile: testcontainers.FromDockerfile{
+			Context:    "../",
+			Dockerfile: "Dockerfile",
+		},
+		Cmd:          []string{"server"}, // Runs the 'server' cobra command
+		ExposedPorts: []string{"8080/tcp"},
+		Env: map[string]string{
+			"GITHUB_WEBHOOK_SECRET": "secret-key",
+			"GITHUB_TOKEN":          "gh-token",
+			"OPENROUTER_API_KEY":    "or-key",
+			"ALLOWED_ORGS":          "dummy-org",
+			"PORT":                  "8080",
+			"BOT_NAME":              "@ai-bot",
+		},
+		WaitingFor: wait.ForLog("Server starting on port 8080...").WithStartupTimeout(120 * time.Second),
+	}
+
+	orboC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: req,
+		Started:          true,
+	})
+	if err != nil {
+		t.Fatalf("Failed to start orbo-mate container: %v", err)
+	}
+
+	defer func() {
+		if err := orboC.Terminate(ctx); err != nil {
+			t.Errorf("Failed to terminate container: %v", err)
+		}
+	}()
+
+	endpoint, err := orboC.Endpoint(ctx, "")
+	if err != nil {
+		t.Fatalf("Failed to get endpoint: %v", err)
+	}
+
+	t.Logf("orbo-mate container successfully running at endpoint: %s", endpoint)
+
+	// Calculate correct signature for the payload
+	signature := computeHMAC256(payloadBytes, "secret-key")
+
+	// Post the valid signed webhook payload representing an Issues event to the container
+	client := &http.Client{Timeout: 5 * time.Second}
+	reqURL := "http://" + endpoint + "/webhook"
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", reqURL, bytes.NewBuffer(payloadBytes))
+	if err != nil {
+		t.Fatalf("Failed to create HTTP request: %v", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("X-GitHub-Event", "issues")
+	httpReq.Header.Set("X-Hub-Signature-256", signature)
+
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		t.Fatalf("Failed to execute request against orbo-mate webhook: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Verify that the server returns 200 OK since the signature matches and org 'dummy-org' is allowed
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("Expected status code 200 OK, got %d", resp.StatusCode)
+	}
+}
+
