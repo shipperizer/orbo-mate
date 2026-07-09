@@ -46,6 +46,17 @@ func (r *Reviewer) ProcessComment(ctx context.Context, event *github.IssueCommen
 	repoName := event.GetRepo().GetName()
 	prNumber := event.GetIssue().GetNumber()
 
+	botRegexName := regexp.QuoteMeta(r.cfg.BotName)
+	if !strings.HasPrefix(botRegexName, "@") {
+		botRegexName = "@?" + botRegexName
+	} else {
+		botRegexName = "@?" + botRegexName[1:]
+	}
+
+	solvePattern := fmt.Sprintf(`(?i)%s\s+(?:try\s+to\s+solve|find\s+a\s+solution|solve).*?(?:with\s+model|using|with)\s+`+"`"+`?([a-zA-Z0-9\-\.\/:_]+)`+"`"+`?`, botRegexName)
+	solveRe := regexp.MustCompile(solvePattern)
+	solveMatches := solveRe.FindStringSubmatch(commentBody)
+
 	pattern := fmt.Sprintf(`%s\s+review\s+with\s+([a-zA-Z0-9\-\/:_]+)`, regexp.QuoteMeta(r.cfg.BotName))
 	re := regexp.MustCompile(pattern)
 	matches := re.FindStringSubmatch(commentBody)
@@ -56,8 +67,39 @@ func (r *Reviewer) ProcessComment(ctx context.Context, event *github.IssueCommen
 	ghClient := github.NewClient(tc)
 
 	targetModel := r.cfg.DefaultModel
-	if len(matches) >= 2 {
+	isSolveCmd := false
+	if len(solveMatches) >= 2 {
+		targetModel = solveMatches[1]
+		isSolveCmd = true
+	} else if len(matches) >= 2 {
 		targetModel = matches[1]
+	}
+
+	if isSolveCmd {
+		logger.Infof("Triggered solve response for issue #%d using model: %s", prNumber, targetModel)
+		var prompt string
+		if event.GetIssue().IsPullRequest() {
+			diffData, err := r.FetchPRDiff(ctx, tc, repoOwner, repoName, prNumber)
+			if err != nil {
+				logger.Errorf("Error fetching PR diff: %v", err)
+				r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, "❌ Failed to fetch PR diff for solve context.")
+				return
+			}
+			prompt = fmt.Sprintf("You are an expert AI assistant tasked with finding a solution for this issue/PR.\n\nIssue #%d: %s\n\nDescription:\n%s\n\nComment request: %s\n\nPR Diff:\n```diff\n%s\n```\n\nPlease reply directly to suggest a solution.", prNumber, event.GetIssue().GetTitle(), event.GetIssue().GetBody(), commentBody, diffData)
+		} else {
+			prompt = fmt.Sprintf("You are an expert AI assistant tasked with finding a solution for this issue.\n\nIssue #%d: %s\n\nDescription:\n%s\n\nComment request: %s\n\nPlease reply directly to suggest a solution.", prNumber, event.GetIssue().GetTitle(), event.GetIssue().GetBody(), commentBody)
+		}
+
+		response, err := r.Chat(ctx, targetModel, prompt)
+		if err != nil {
+			logger.Errorf("OpenRouter Chat error: %v", err)
+			r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, "❌ Failed to generate response for the comment.")
+			return
+		}
+
+		responseBlock := fmt.Sprintf("### 🤖 Automated Response by %s\n\n%s", r.cfg.BotName, response)
+		r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, responseBlock)
+		return
 	}
 
 	if event.GetIssue().IsPullRequest() {
