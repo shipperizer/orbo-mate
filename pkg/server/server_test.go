@@ -433,6 +433,109 @@ func TestServer_Webhook_NewEvents(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", rr.Code)
 	}
 
+	// 5. IssueCommentEvent (Created by the bot itself)
+	commentEventFromBotSelf := github.IssueCommentEvent{
+		Action: github.String("created"),
+		Comment: &github.IssueComment{
+			Body: github.String("@ai-bot review with meta-llama/llama-3"),
+			User: &github.User{
+				Login: github.String("ai-bot"),
+				Type:  github.String("User"),
+			},
+		},
+		Issue: &github.Issue{
+			Number:        github.Int(46),
+			RepositoryURL: github.String("https://api.github.com/repos/my-org/my-repo"),
+		},
+		Repo: &github.Repository{
+			URL: github.String("https://api.github.com/repos/my-org/my-repo"),
+			Owner: &github.User{
+				Login: github.String("my-org"),
+			},
+		},
+	}
+	bodyCommentBotSelf, _ := json.Marshal(commentEventFromBotSelf)
+	sigCommentBotSelf := computeHMAC256(bodyCommentBotSelf, "secret-key")
+	reqCommentBotSelf, _ := http.NewRequest("POST", "/webhook", bytes.NewBuffer(bodyCommentBotSelf))
+	reqCommentBotSelf.Header.Set("Content-Type", "application/json")
+	reqCommentBotSelf.Header.Set("X-GitHub-Event", "issue_comment")
+	reqCommentBotSelf.Header.Set("X-Hub-Signature-256", sigCommentBotSelf)
+
+	// mockReviewer.ProcessComment should NOT be called
+	rr = httptest.NewRecorder()
+	srv.ServeHTTP(rr, reqCommentBotSelf)
+	if rr.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", rr.Code)
+	}
+
+	// 6. IssueCommentEvent (Created by another bot account)
+	commentEventFromOtherBot := github.IssueCommentEvent{
+		Action: github.String("created"),
+		Comment: &github.IssueComment{
+			Body: github.String("@ai-bot review with meta-llama/llama-3"),
+			User: &github.User{
+				Login: github.String("some-other-bot"),
+				Type:  github.String("Bot"),
+			},
+		},
+		Issue: &github.Issue{
+			Number:        github.Int(47),
+			RepositoryURL: github.String("https://api.github.com/repos/my-org/my-repo"),
+		},
+		Repo: &github.Repository{
+			URL: github.String("https://api.github.com/repos/my-org/my-repo"),
+			Owner: &github.User{
+				Login: github.String("my-org"),
+			},
+		},
+	}
+	bodyCommentOtherBot, _ := json.Marshal(commentEventFromOtherBot)
+	sigCommentOtherBot := computeHMAC256(bodyCommentOtherBot, "secret-key")
+	reqCommentOtherBot, _ := http.NewRequest("POST", "/webhook", bytes.NewBuffer(bodyCommentOtherBot))
+	reqCommentOtherBot.Header.Set("Content-Type", "application/json")
+	reqCommentOtherBot.Header.Set("X-GitHub-Event", "issue_comment")
+	reqCommentOtherBot.Header.Set("X-Hub-Signature-256", sigCommentOtherBot)
+
+	// mockReviewer.ProcessComment should NOT be called
+	rr = httptest.NewRecorder()
+	srv.ServeHTTP(rr, reqCommentOtherBot)
+	if rr.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", rr.Code)
+	}
+
+	// 7. PullRequestReviewCommentEvent (Created by another bot account)
+	reviewCommentEventFromOtherBot := github.PullRequestReviewCommentEvent{
+		Action: github.String("created"),
+		Comment: &github.PullRequestComment{
+			Body: github.String("@ai-bot review with meta-llama/llama-3"),
+			User: &github.User{
+				Login: github.String("some-other-bot"),
+				Type:  github.String("Bot"),
+			},
+		},
+		PullRequest: &github.PullRequest{
+			Number: github.Int(48),
+		},
+		Repo: &github.Repository{
+			Owner: &github.User{
+				Login: github.String("my-org"),
+			},
+		},
+	}
+	bodyReviewOtherBot, _ := json.Marshal(reviewCommentEventFromOtherBot)
+	sigReviewOtherBot := computeHMAC256(bodyReviewOtherBot, "secret-key")
+	reqReviewOtherBot, _ := http.NewRequest("POST", "/webhook", bytes.NewBuffer(bodyReviewOtherBot))
+	reqReviewOtherBot.Header.Set("Content-Type", "application/json")
+	reqReviewOtherBot.Header.Set("X-GitHub-Event", "pull_request_review_comment")
+	reqReviewOtherBot.Header.Set("X-Hub-Signature-256", sigReviewOtherBot)
+
+	// mockReviewer.ProcessPRReviewComment should NOT be called
+	rr = httptest.NewRecorder()
+	srv.ServeHTTP(rr, reqReviewOtherBot)
+	if rr.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", rr.Code)
+	}
+
 	time.Sleep(100 * time.Millisecond)
 }
 

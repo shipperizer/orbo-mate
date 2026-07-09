@@ -114,6 +114,14 @@ func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 	switch e := event.(type) {
 	case *github.IssueCommentEvent:
 		if (e.GetAction() == "created" || e.GetAction() == "edited") && e.GetIssue() != nil {
+			commentAuthor := e.GetComment().GetUser().GetLogin()
+			commentAuthorType := e.GetComment().GetUser().GetType()
+			if commentAuthor == cleanBotName(s.cfg.BotName) || commentAuthorType == "Bot" {
+				logger.Warnf("Ignored comment from bot or bot-like account: %s (type: %s)", commentAuthor, commentAuthorType)
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+
 			body := e.GetComment().GetBody()
 			isTagged := strings.Contains(body, s.cfg.BotName) || strings.Contains(body, cleanBotName(s.cfg.BotName))
 			if isTagged {
@@ -169,6 +177,14 @@ func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 
 	case *github.PullRequestReviewCommentEvent:
 		if e.GetAction() == "created" && e.GetPullRequest() != nil {
+			commentAuthor := e.GetComment().GetUser().GetLogin()
+			commentAuthorType := e.GetComment().GetUser().GetType()
+			if commentAuthor == cleanBotName(s.cfg.BotName) || commentAuthorType == "Bot" {
+				logger.Warnf("Ignored PR review comment from bot or bot-like account: %s (type: %s)", commentAuthor, commentAuthorType)
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+
 			body := e.GetComment().GetBody()
 			isTagged := strings.Contains(body, s.cfg.BotName) || strings.Contains(body, cleanBotName(s.cfg.BotName))
 			if isTagged {
