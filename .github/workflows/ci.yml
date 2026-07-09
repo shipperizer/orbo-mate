@@ -87,6 +87,10 @@ jobs:
           DOCKER_BUILDKIT: 1
           SKAFFOLD_DEFAULT_REPO: ghcr.io/shipperizer
         run: |
+          PLATFORM="linux/amd64"
+          if [ "${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}" = "true" ]; then
+            PLATFORM="linux/amd64,linux/arm64"
+          fi
           skaffold build \
-            --platform=linux/amd64,linux/arm64 \
+            --platform=$PLATFORM \
             --push=${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
