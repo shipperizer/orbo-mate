@@ -401,6 +401,38 @@ func TestServer_Webhook_NewEvents(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", rr.Code)
 	}
 
+	// 4. IssueCommentEvent (Edited, tagging bot)
+	commentEvent := github.IssueCommentEvent{
+		Action: github.String("edited"),
+		Comment: &github.IssueComment{
+			Body: github.String("@ai-bot try to solve this with model z.ai/glm-5.2"),
+		},
+		Issue: &github.Issue{
+			Number:        github.Int(45),
+			RepositoryURL: github.String("https://api.github.com/repos/my-org/my-repo"),
+		},
+		Repo: &github.Repository{
+			URL: github.String("https://api.github.com/repos/my-org/my-repo"),
+			Owner: &github.User{
+				Login: github.String("my-org"),
+			},
+		},
+	}
+	bodyComment, _ := json.Marshal(commentEvent)
+	sigComment := computeHMAC256(bodyComment, "secret-key")
+	reqComment, _ := http.NewRequest("POST", "/webhook", bytes.NewBuffer(bodyComment))
+	reqComment.Header.Set("Content-Type", "application/json")
+	reqComment.Header.Set("X-GitHub-Event", "issue_comment")
+	reqComment.Header.Set("X-Hub-Signature-256", sigComment)
+
+	mockReviewer.EXPECT().ProcessComment(gomock.Any(), gomock.Any()).Times(1)
+
+	rr = httptest.NewRecorder()
+	srv.ServeHTTP(rr, reqComment)
+	if rr.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", rr.Code)
+	}
+
 	time.Sleep(100 * time.Millisecond)
 }
 

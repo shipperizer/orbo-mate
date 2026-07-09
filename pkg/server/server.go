@@ -113,7 +113,7 @@ func (s *Server) handleWebhook(w http.ResponseWriter, r *http.Request) {
 
 	switch e := event.(type) {
 	case *github.IssueCommentEvent:
-		if e.GetAction() == "created" && e.GetIssue() != nil {
+		if (e.GetAction() == "created" || e.GetAction() == "edited") && e.GetIssue() != nil {
 			body := e.GetComment().GetBody()
 			isTagged := strings.Contains(body, s.cfg.BotName) || strings.Contains(body, cleanBotName(s.cfg.BotName))
 			if isTagged {
