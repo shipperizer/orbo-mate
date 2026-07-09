@@ -13,6 +13,7 @@ type Config struct {
 	GitHubToken     string `envconfig:"GITHUB_TOKEN" required:"true"`
 	OpenRouterKey   string `envconfig:"OPENROUTER_API_KEY" required:"true"`
 	DefaultModel    string `envconfig:"DEFAULT_MODEL" default:"meta-llama/llama-3.1-70b-instruct"`
+	ExtractorModel  string `envconfig:"EXTRACTOR_MODEL" default:"google/gemma-3-4b-it"`
 	BotName         string   `envconfig:"BOT_NAME" default:"@ai-bot"`
 	Port            string   `envconfig:"PORT" default:"8080"`
 	ContextSentence string   `envconfig:"CONTEXT_SENTENCE"`

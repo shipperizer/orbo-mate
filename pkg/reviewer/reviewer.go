@@ -53,11 +53,11 @@ func (r *Reviewer) ProcessComment(ctx context.Context, event *github.IssueCommen
 		botRegexName = "@?" + botRegexName[1:]
 	}
 
-	solvePattern := fmt.Sprintf(`(?i)%s\s+(?:try\s+to\s+solve|find\s+a\s+solution|solve).*?(?:with\s+model|using|with)\s+`+"`"+`?([a-zA-Z0-9\-\.\/:_]+)`+"`"+`?`, botRegexName)
+	solvePattern := fmt.Sprintf(`(?i)%s\s+(?:try\s+(?:\w+\s+)*to\s+solve|find\s+(?:\w+\s+)*solution|solve).*?(?:with\s+model|using|with)\s+`+"`"+`?([a-zA-Z0-9\-\.\/:_]+)`+"`"+`?`, botRegexName)
 	solveRe := regexp.MustCompile(solvePattern)
 	solveMatches := solveRe.FindStringSubmatch(commentBody)
 
-	pattern := fmt.Sprintf(`%s\s+review\s+with\s+([a-zA-Z0-9\-\/:_]+)`, regexp.QuoteMeta(r.cfg.BotName))
+	pattern := fmt.Sprintf(`%s\s+review\s+with\s+([a-zA-Z0-9\-\.\/:_]+)`, regexp.QuoteMeta(r.cfg.BotName))
 	re := regexp.MustCompile(pattern)
 	matches := re.FindStringSubmatch(commentBody)
 
@@ -73,6 +73,16 @@ func (r *Reviewer) ProcessComment(ctx context.Context, event *github.IssueCommen
 		isSolveCmd = true
 	} else if len(matches) >= 2 {
 		targetModel = matches[1]
+	} else {
+		// LLM fallback extraction
+		extractedModel := r.extractModelWithLLM(ctx, commentBody)
+		if extractedModel != "" {
+			targetModel = extractedModel
+			lowerBody := strings.ToLower(commentBody)
+			if strings.Contains(lowerBody, "solve") || strings.Contains(lowerBody, "solution") {
+				isSolveCmd = true
+			}
+		}
 	}
 
 	if isSolveCmd {
@@ -325,7 +335,7 @@ func (r *Reviewer) ProcessPRReviewComment(ctx context.Context, event *github.Pul
 	repoName := event.GetRepo().GetName()
 	prNumber := event.GetPullRequest().GetNumber()
 
-	pattern := fmt.Sprintf(`%s\s+review\s+with\s+([a-zA-Z0-9\-\/:_]+)`, regexp.QuoteMeta(r.cfg.BotName))
+	pattern := fmt.Sprintf(`%s\s+review\s+with\s+([a-zA-Z0-9\-\.\/:_]+)`, regexp.QuoteMeta(r.cfg.BotName))
 	re := regexp.MustCompile(pattern)
 	matches := re.FindStringSubmatch(commentBody)
 
@@ -333,7 +343,12 @@ func (r *Reviewer) ProcessPRReviewComment(ctx context.Context, event *github.Pul
 	if len(matches) >= 2 {
 		targetModel = matches[1]
 	} else {
-		targetModel = r.cfg.DefaultModel
+		extractedModel := r.extractModelWithLLM(ctx, commentBody)
+		if extractedModel != "" {
+			targetModel = extractedModel
+		} else {
+			targetModel = r.cfg.DefaultModel
+		}
 	}
 
 	logger.Infof("Triggered PR review comment response for PR #%d using model: %s", prNumber, targetModel)
@@ -496,4 +511,26 @@ func userFriendlyError(err error, fallback string) string {
 
 	// Fallback with a more detailed message instead of a generic one
 	return fmt.Sprintf("%s\n\n*Error details:* `%s`", fallback, errStr)
+}
+
+// extractModelWithLLM attempts to parse the model ID using a cheap fallback model if standard regex fails.
+func (r *Reviewer) extractModelWithLLM(ctx context.Context, commentBody string) string {
+	lowerBody := strings.ToLower(commentBody)
+	if !strings.Contains(lowerBody, "model") && !strings.Contains(lowerBody, "using") && !strings.Contains(lowerBody, "with") {
+		return ""
+	}
+
+	prompt := fmt.Sprintf("You are a precise model ID extractor. Analyze this GitHub comment and extract the model ID the user wants the bot to use (e.g. \"moonshotai/kimi-k2.6\", \"z.ai/glm-5\").\nIf a model ID is found, return ONLY the raw model ID string (no markdown, no quotes, no extra text).\nIf no specific model ID is mentioned, return 'default'.\n\nComment: %q", commentBody)
+
+	// Call OpenRouter using the configured extractor model
+	resp, err := r.Chat(ctx, r.cfg.ExtractorModel, prompt)
+	if err != nil {
+		return ""
+	}
+	cleaned := strings.TrimSpace(resp)
+	cleaned = strings.Trim(cleaned, "`'\"")
+	if cleaned == "" || strings.ToLower(cleaned) == "default" || strings.Contains(cleaned, " ") {
+		return ""
+	}
+	return cleaned
 }

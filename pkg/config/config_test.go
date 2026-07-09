@@ -38,6 +38,21 @@ func TestLoad_Success(t *testing.T) {
 	if cfg.DefaultModel != "meta-llama/llama-3.1-70b-instruct" {
 		t.Errorf("Expected DefaultModel to be default, got %s", cfg.DefaultModel)
 	}
+	if cfg.ExtractorModel != "google/gemma-3-4b-it" {
+		t.Errorf("Expected ExtractorModel to be 'google/gemma-3-4b-it', got %s", cfg.ExtractorModel)
+	}
+
+	// Test environment override
+	os.Setenv("EXTRACTOR_MODEL", "custom/extractor")
+	cfgOverridden, err := Load()
+	os.Unsetenv("EXTRACTOR_MODEL")
+	if err != nil {
+		t.Fatalf("Expected no error when loading with override, got %v", err)
+	}
+	if cfgOverridden.ExtractorModel != "custom/extractor" {
+		t.Errorf("Expected ExtractorModel to be overridden to 'custom/extractor', got %s", cfgOverridden.ExtractorModel)
+	}
+
 	if cfg.ContextSentence != DefaultContextSentence {
 		t.Errorf("Expected ContextSentence to be default, got %s", cfg.ContextSentence)
 	}

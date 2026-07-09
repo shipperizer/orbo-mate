@@ -887,3 +887,211 @@ func TestReviewer_ThoroughErrorLogging(t *testing.T) {
 	}
 }
 
+func TestReviewer_ProcessComment_FindBetterSolution_Dots(t *testing.T) {
+	cfg := &config.Config{
+		BotName:       "@ai-bot",
+		GitHubToken:   "gh-token",
+		OpenRouterKey: "or-key",
+		DefaultModel:  "meta-llama/llama-3.1-70b-instruct",
+	}
+
+	calledPostComment := false
+	calledOpenRouter := false
+
+	httpClient := &http.Client{
+		Transport: mockRoundTripper(func(req *http.Request) (*http.Response, error) {
+			if req.Method == "POST" && req.URL.Host == "openrouter.ai" {
+				calledOpenRouter = true
+				var payload map[string]interface{}
+				_ = json.NewDecoder(req.Body).Decode(&payload)
+
+				model, _ := payload["model"].(string)
+				if model != "moonshotai/kimi-k2.6" {
+					t.Errorf("Expected model 'moonshotai/kimi-k2.6', got %s", model)
+				}
+
+				respPayload := map[string]interface{}{
+					"choices": []map[string]interface{}{
+						{
+							"message": map[string]interface{}{
+								"role":    "assistant",
+								"content": "Here is the better solution!",
+							},
+						},
+					},
+				}
+				respBytes, _ := json.Marshal(respPayload)
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Body:       io.NopCloser(bytes.NewBuffer(respBytes)),
+				}, nil
+			}
+
+			if req.Method == "POST" && req.URL.Path == "/repos/my-owner/my-repo/issues/456/comments" {
+				calledPostComment = true
+				var comment github.IssueComment
+				_ = json.NewDecoder(req.Body).Decode(&comment)
+				expectedBody := "### 🤖 Automated Response by @ai-bot\n*Model used: `moonshotai/kimi-k2.6`*\n\nHere is the better solution!"
+				if comment.GetBody() != expectedBody {
+					t.Errorf("Expected body %q, got %q", expectedBody, comment.GetBody())
+				}
+				return &http.Response{
+					StatusCode: http.StatusCreated,
+					Body:       io.NopCloser(bytes.NewBufferString("{}")),
+				}, nil
+			}
+
+			t.Errorf("Unexpected request: %s %s", req.Method, req.URL.String())
+			return &http.Response{StatusCode: 400}, nil
+		}),
+	}
+
+	r := NewReviewer(cfg, httpClient)
+
+	event := &github.IssueCommentEvent{
+		Action: github.String("created"),
+		Comment: &github.IssueComment{
+			Body: github.String("@ai-bot find a better solution using moonshotai/kimi-k2.6"),
+			User: &github.User{
+				Login: github.String("some-user"),
+				Type:  github.String("User"),
+			},
+		},
+		Issue: &github.Issue{
+			Number: github.Int(456),
+			Title:  github.String("Centralize test infrastructure"),
+			Body:   github.String("Copy pasted setup helpers are bad."),
+		},
+		Repo: &github.Repository{
+			Name: github.String("my-repo"),
+			Owner: &github.User{
+				Login: github.String("my-owner"),
+			},
+		},
+	}
+
+	r.ProcessComment(context.Background(), event)
+
+	if !calledOpenRouter {
+		t.Error("Expected OpenRouter Chat to be called")
+	}
+	if !calledPostComment {
+		t.Error("Expected PostComment to be called")
+	}
+}
+
+func TestReviewer_ProcessComment_LLMFallback_Success(t *testing.T) {
+	cfg := &config.Config{
+		BotName:        "@ai-bot",
+		GitHubToken:    "gh-token",
+		OpenRouterKey:  "or-key",
+		DefaultModel:   "meta-llama/llama-3.1-70b-instruct",
+		ExtractorModel: "google/gemma-3-4b-it",
+	}
+
+	calledPostComment := false
+	calledLLM := false
+	calledSolver := false
+
+	httpClient := &http.Client{
+		Transport: mockRoundTripper(func(req *http.Request) (*http.Response, error) {
+			if req.Method == "POST" && req.URL.Host == "openrouter.ai" {
+				var payload map[string]interface{}
+				_ = json.NewDecoder(req.Body).Decode(&payload)
+
+				model, _ := payload["model"].(string)
+				if model == "google/gemma-3-4b-it" {
+					calledLLM = true
+					respPayload := map[string]interface{}{
+						"choices": []map[string]interface{}{
+							{
+								"message": map[string]interface{}{
+									"role":    "assistant",
+									"content": "moonshotai/kimi-k2.6",
+								},
+							},
+						},
+					}
+					respBytes, _ := json.Marshal(respPayload)
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Body:       io.NopCloser(bytes.NewBuffer(respBytes)),
+					}, nil
+				} else if model == "moonshotai/kimi-k2.6" {
+					calledSolver = true
+					respPayload := map[string]interface{}{
+						"choices": []map[string]interface{}{
+							{
+								"message": map[string]interface{}{
+									"role":    "assistant",
+									"content": "Here is the fallback solver solution!",
+								},
+							},
+						},
+					}
+					respBytes, _ := json.Marshal(respPayload)
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Body:       io.NopCloser(bytes.NewBuffer(respBytes)),
+					}, nil
+				}
+			}
+
+			if req.Method == "POST" && req.URL.Path == "/repos/my-owner/my-repo/issues/456/comments" {
+				calledPostComment = true
+				var comment github.IssueComment
+				_ = json.NewDecoder(req.Body).Decode(&comment)
+				expectedBody := "### 🤖 Automated Response by @ai-bot\n*Model used: `moonshotai/kimi-k2.6`*\n\nHere is the fallback solver solution!"
+				if comment.GetBody() != expectedBody {
+					t.Errorf("Expected body %q, got %q", expectedBody, comment.GetBody())
+				}
+				return &http.Response{
+					StatusCode: http.StatusCreated,
+					Body:       io.NopCloser(bytes.NewBufferString("{}")),
+				}, nil
+			}
+
+			t.Errorf("Unexpected request: %s %s", req.Method, req.URL.String())
+			return &http.Response{StatusCode: 400}, nil
+		}),
+	}
+
+	r := NewReviewer(cfg, httpClient)
+
+	event := &github.IssueCommentEvent{
+		Action: github.String("created"),
+		Comment: &github.IssueComment{
+			// Conversational comment that fails the standard regex but gets parsed by the fallback LLM
+			Body: github.String("@ai-bot please try hard to resolve this issue and let it use model moonshotai/kimi-k2.6"),
+			User: &github.User{
+				Login: github.String("some-user"),
+				Type:  github.String("User"),
+			},
+		},
+		Issue: &github.Issue{
+			Number: github.Int(456),
+			Title:  github.String("Centralize test infrastructure"),
+			Body:   github.String("Copy pasted setup helpers are bad."),
+		},
+		Repo: &github.Repository{
+			Name: github.String("my-repo"),
+			Owner: &github.User{
+				Login: github.String("my-owner"),
+			},
+		},
+	}
+
+	r.ProcessComment(context.Background(), event)
+
+	if !calledLLM {
+		t.Error("Expected extractor LLM to be called")
+	}
+	if !calledSolver {
+		t.Error("Expected solver LLM to be called with moonshotai/kimi-k2.6")
+	}
+	if !calledPostComment {
+		t.Error("Expected PostComment to be called")
+	}
+}
+
+
