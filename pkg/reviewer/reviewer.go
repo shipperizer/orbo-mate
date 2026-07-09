@@ -97,7 +97,7 @@ func (r *Reviewer) ProcessComment(ctx context.Context, event *github.IssueCommen
 			return
 		}
 
-		responseBlock := fmt.Sprintf("### 🤖 Automated Response by %s\n\n%s", r.cfg.BotName, response)
+		responseBlock := fmt.Sprintf("### 🤖 Automated Response by %s\n*Model used: `%s`*\n\n%s", r.cfg.BotName, targetModel, response)
 		r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, responseBlock)
 		return
 	}
@@ -132,7 +132,7 @@ func (r *Reviewer) ProcessComment(ctx context.Context, event *github.IssueCommen
 				return
 			}
 
-			responseBlock := fmt.Sprintf("### 🤖 Automated Response by %s\n\n%s", r.cfg.BotName, response)
+			responseBlock := fmt.Sprintf("### 🤖 Automated Response by %s\n*Model used: `%s`*\n\n%s", r.cfg.BotName, targetModel, response)
 			r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, responseBlock)
 		}
 	} else {
@@ -146,7 +146,7 @@ func (r *Reviewer) ProcessComment(ctx context.Context, event *github.IssueCommen
 			return
 		}
 
-		responseBlock := fmt.Sprintf("### 🤖 Automated Response by %s\n\n%s", r.cfg.BotName, response)
+		responseBlock := fmt.Sprintf("### 🤖 Automated Response by %s\n*Model used: `%s`*\n\n%s", r.cfg.BotName, targetModel, response)
 		r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, responseBlock)
 	}
 }
@@ -283,7 +283,7 @@ func (r *Reviewer) ProcessIssueAssigned(ctx context.Context, event *github.Issue
 		return
 	}
 
-	responseBlock := fmt.Sprintf("### 🤖 Automated Response by %s\n\n%s", r.cfg.BotName, response)
+	responseBlock := fmt.Sprintf("### 🤖 Automated Response by %s\n*Model used: `%s` (Default)*\n\n%s", r.cfg.BotName, r.cfg.DefaultModel, response)
 	r.PostComment(ctx, ghClient, repoOwner, repoName, issueNumber, responseBlock)
 }
 
@@ -358,7 +358,7 @@ func (r *Reviewer) ProcessPRReviewComment(ctx context.Context, event *github.Pul
 		return
 	}
 
-	responseBlock := fmt.Sprintf("### 🤖 Automated Response by %s\n\n%s", r.cfg.BotName, response)
+	responseBlock := fmt.Sprintf("### 🤖 Automated Response by %s\n*Model used: `%s`*\n\n%s", r.cfg.BotName, targetModel, response)
 	r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, responseBlock)
 }
 

@@ -369,7 +369,7 @@ func TestReviewer_ProcessIssueAssigned(t *testing.T) {
 				calledPostComment = true
 				var comment github.IssueComment
 				_ = json.NewDecoder(req.Body).Decode(&comment)
-				expectedBody := "### 🤖 Automated Response by @ai-bot\n\nHere is how to solve it"
+				expectedBody := "### 🤖 Automated Response by @ai-bot\n*Model used: `meta-llama/llama-3.1-70b-instruct` (Default)*\n\nHere is how to solve it"
 				if comment.GetBody() != expectedBody {
 					t.Errorf("Expected body %q, got %q", expectedBody, comment.GetBody())
 				}
@@ -553,7 +553,7 @@ func TestReviewer_ProcessPRReviewComment(t *testing.T) {
 				calledPostComment = true
 				var comment github.IssueComment
 				_ = json.NewDecoder(req.Body).Decode(&comment)
-				expectedBody := "### 🤖 Automated Response by @ai-bot\n\nThis looks like a comment reply"
+				expectedBody := "### 🤖 Automated Response by @ai-bot\n*Model used: `anthropic/claude-3`*\n\nThis looks like a comment reply"
 				if comment.GetBody() != expectedBody {
 					t.Errorf("Expected body %q, got %q", expectedBody, comment.GetBody())
 				}
@@ -643,7 +643,7 @@ func TestReviewer_ProcessComment_Solve(t *testing.T) {
 				calledPostComment = true
 				var comment github.IssueComment
 				_ = json.NewDecoder(req.Body).Decode(&comment)
-				expectedBody := "### 🤖 Automated Response by @ai-bot\n\nHere is the solution!"
+				expectedBody := "### 🤖 Automated Response by @ai-bot\n*Model used: `z.ai/glm-5.2`*\n\nHere is the solution!"
 				if comment.GetBody() != expectedBody {
 					t.Errorf("Expected body %q, got %q", expectedBody, comment.GetBody())
 				}
@@ -738,7 +738,7 @@ func TestReviewer_ProcessComment_Solve_PR(t *testing.T) {
 				calledPostComment = true
 				var comment github.IssueComment
 				_ = json.NewDecoder(req.Body).Decode(&comment)
-				expectedBody := "### 🤖 Automated Response by @ai-bot\n\nHere is the PR solution!"
+				expectedBody := "### 🤖 Automated Response by @ai-bot\n*Model used: `z.ai/glm-5.2`*\n\nHere is the PR solution!"
 				if comment.GetBody() != expectedBody {
 					t.Errorf("Expected body %q, got %q", expectedBody, comment.GetBody())
 				}
