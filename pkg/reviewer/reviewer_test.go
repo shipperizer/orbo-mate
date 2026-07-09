@@ -232,8 +232,9 @@ func TestReviewer_ProcessComment_OpenRouterError(t *testing.T) {
 				calledPostFailureComment = true
 				var comment github.IssueComment
 				_ = json.NewDecoder(req.Body).Decode(&comment)
-				if comment.GetBody() != "❌ Failed to generate review from OpenRouter." {
-					t.Errorf("Expected failure message, got %q", comment.GetBody())
+				expectedBody := "❌ **OpenRouter Error: Unauthorized**\n\nThe configured OpenRouter API key is invalid or unauthorized. Please check that the API key is correctly configured.\n\n*Error details:* `openrouter error status 401: Unauthorized key`"
+				if comment.GetBody() != expectedBody {
+					t.Errorf("Expected body %q, got %q", expectedBody, comment.GetBody())
 				}
 				return &http.Response{
 					StatusCode: http.StatusCreated,
@@ -777,6 +778,78 @@ func TestReviewer_ProcessComment_Solve_PR(t *testing.T) {
 	if !calledGetDiff {
 		t.Error("Expected FetchPRDiff to be called")
 	}
+	if !calledOpenRouter {
+		t.Error("Expected OpenRouter Chat to be called")
+	}
+	if !calledPostComment {
+		t.Error("Expected PostComment to be called")
+	}
+}
+
+
+func TestReviewer_ProcessComment_InvalidModelError(t *testing.T) {
+	cfg := &config.Config{
+		BotName:       "@ai-bot",
+		GitHubToken:   "gh-token",
+		OpenRouterKey: "or-key",
+		DefaultModel:  "meta-llama/llama-3.1-70b-instruct",
+	}
+
+	var calledOpenRouter, calledPostComment bool
+
+	client := &http.Client{
+		Transport: mockRoundTripper(func(req *http.Request) (*http.Response, error) {
+			if req.Method == "POST" && req.URL.Host == "openrouter.ai" {
+				calledOpenRouter = true
+				errorJSON := `{"error":{"message":"z.ai/glm-5 is not a valid model ID","code":400}}`
+				return &http.Response{
+					StatusCode: http.StatusBadRequest,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(bytes.NewBufferString(errorJSON)),
+					Request:    req,
+				}, nil
+			}
+
+			if req.Method == "POST" && req.URL.Path == "/repos/my-owner/my-repo/issues/456/comments" {
+				calledPostComment = true
+				var comment github.IssueComment
+				_ = json.NewDecoder(req.Body).Decode(&comment)
+				expectedBody := "❌ **OpenRouter Error: Invalid Model**\n\nThe model you requested could not be found or is not supported. Please verify the model ID matches a valid ID on OpenRouter (e.g., `meta-llama/llama-3.1-70b-instruct`).\n\n*Error details:* `openrouter error status 400 (code 400): z.ai/glm-5 is not a valid model ID`"
+				if comment.GetBody() != expectedBody {
+					t.Errorf("Expected body %q, got %q", expectedBody, comment.GetBody())
+				}
+				return &http.Response{
+					StatusCode: http.StatusCreated,
+					Body:       io.NopCloser(bytes.NewBufferString("{}")),
+				}, nil
+			}
+
+			t.Errorf("Unexpected request: %s %s", req.Method, req.URL.String())
+			return &http.Response{StatusCode: 400}, nil
+		}),
+	}
+
+	r := NewReviewer(cfg, client)
+
+	event := &github.IssueCommentEvent{
+		Comment: &github.IssueComment{
+			Body: github.String("@ai-bot try to solve this with model z.ai/glm-5"),
+		},
+		Repo: &github.Repository{
+			Name: github.String("my-repo"),
+			Owner: &github.User{
+				Login: github.String("my-owner"),
+			},
+		},
+		Issue: &github.Issue{
+			Number: github.Int(456),
+			Title:  github.String("Centralize test infrastructure"),
+			Body:   github.String("Copy pasted setup helpers are bad."),
+		},
+	}
+
+	r.ProcessComment(context.Background(), event)
+
 	if !calledOpenRouter {
 		t.Error("Expected OpenRouter Chat to be called")
 	}

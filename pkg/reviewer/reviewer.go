@@ -93,7 +93,7 @@ func (r *Reviewer) ProcessComment(ctx context.Context, event *github.IssueCommen
 		response, err := r.Chat(ctx, targetModel, prompt)
 		if err != nil {
 			logger.Errorf("OpenRouter Chat error: %v", err)
-			r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, "❌ Failed to generate response for the comment.")
+			r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, userFriendlyError(err, "❌ Failed to generate response for the comment."))
 			return
 		}
 
@@ -116,7 +116,7 @@ func (r *Reviewer) ProcessComment(ctx context.Context, event *github.IssueCommen
 			reviewOutput, err := r.GetOpenRouterReview(ctx, targetModel, diffData)
 			if err != nil {
 				logger.Errorf("OpenRouter API error: %v", err)
-				r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, "❌ Failed to generate review from OpenRouter.")
+				r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, userFriendlyError(err, "❌ Failed to generate review from OpenRouter."))
 				return
 			}
 
@@ -128,7 +128,7 @@ func (r *Reviewer) ProcessComment(ctx context.Context, event *github.IssueCommen
 			response, err := r.Chat(ctx, targetModel, prompt)
 			if err != nil {
 				logger.Errorf("OpenRouter Chat error: %v", err)
-				r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, "❌ Failed to generate response for the comment.")
+				r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, userFriendlyError(err, "❌ Failed to generate response for the comment."))
 				return
 			}
 
@@ -142,7 +142,7 @@ func (r *Reviewer) ProcessComment(ctx context.Context, event *github.IssueCommen
 		response, err := r.Chat(ctx, targetModel, prompt)
 		if err != nil {
 			logger.Errorf("OpenRouter Chat error: %v", err)
-			r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, "❌ Failed to generate response for the comment.")
+			r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, userFriendlyError(err, "❌ Failed to generate response for the comment."))
 			return
 		}
 
@@ -279,7 +279,7 @@ func (r *Reviewer) ProcessIssueAssigned(ctx context.Context, event *github.Issue
 	response, err := r.Chat(ctx, r.cfg.DefaultModel, prompt)
 	if err != nil {
 		logger.Errorf("OpenRouter Chat error: %v", err)
-		r.PostComment(ctx, ghClient, repoOwner, repoName, issueNumber, "❌ Failed to generate response for assigned issue.")
+		r.PostComment(ctx, ghClient, repoOwner, repoName, issueNumber, userFriendlyError(err, "❌ Failed to generate response for assigned issue."))
 		return
 	}
 
@@ -310,7 +310,7 @@ func (r *Reviewer) ProcessPRAssigned(ctx context.Context, event *github.PullRequ
 	reviewOutput, err := r.GetOpenRouterReview(ctx, r.cfg.DefaultModel, diffData)
 	if err != nil {
 		logger.Errorf("OpenRouter API error: %v", err)
-		r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, "❌ Failed to generate review from OpenRouter.")
+		r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, userFriendlyError(err, "❌ Failed to generate review from OpenRouter."))
 		return
 	}
 
@@ -354,7 +354,7 @@ func (r *Reviewer) ProcessPRReviewComment(ctx context.Context, event *github.Pul
 	response, err := r.Chat(ctx, targetModel, prompt)
 	if err != nil {
 		logger.Errorf("OpenRouter Chat error: %v", err)
-		r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, "❌ Failed to generate response from OpenRouter.")
+		r.PostComment(ctx, ghClient, repoOwner, repoName, prNumber, userFriendlyError(err, "❌ Failed to generate response from OpenRouter."))
 		return
 	}
 
@@ -455,4 +455,45 @@ func (r *Reviewer) PostComment(ctx context.Context, client *github.Client, owner
 	if err != nil {
 		logger.Errorf("Failed to post comment to PR #%d: %v", prNumber, err)
 	}
+}
+
+// userFriendlyError parses common OpenRouter errors and returns a styled detailed markdown message.
+func userFriendlyError(err error, fallback string) string {
+	if err == nil {
+		return fallback
+	}
+
+	errStr := err.Error()
+
+	// 1. Invalid Model / Model Not Found
+	if strings.Contains(strings.ToLower(errStr), "is not a valid model id") ||
+		strings.Contains(strings.ToLower(errStr), "model not found") ||
+		strings.Contains(strings.ToLower(errStr), "model_not_found") {
+		return fmt.Sprintf("❌ **OpenRouter Error: Invalid Model**\n\nThe model you requested could not be found or is not supported. Please verify the model ID matches a valid ID on OpenRouter (e.g., `meta-llama/llama-3.1-70b-instruct`).\n\n*Error details:* `%s`", errStr)
+	}
+
+	// 2. Rate Limit Exceeded
+	if strings.Contains(strings.ToLower(errStr), "rate limit") ||
+		strings.Contains(strings.ToLower(errStr), "429") ||
+		strings.Contains(strings.ToLower(errStr), "too many requests") {
+		return fmt.Sprintf("❌ **OpenRouter Error: Rate Limit Exceeded**\n\nRate limit was hit for the OpenRouter API. Please wait a moment before trying again.\n\n*Error details:* `%s`", errStr)
+	}
+
+	// 3. Unauthorized / Invalid API Key
+	if strings.Contains(strings.ToLower(errStr), "invalid api key") ||
+		strings.Contains(strings.ToLower(errStr), "401") ||
+		strings.Contains(strings.ToLower(errStr), "unauthorized") {
+		return fmt.Sprintf("❌ **OpenRouter Error: Unauthorized**\n\nThe configured OpenRouter API key is invalid or unauthorized. Please check that the API key is correctly configured.\n\n*Error details:* `%s`", errStr)
+	}
+
+	// 4. Billing / Insufficient Credits
+	if strings.Contains(strings.ToLower(errStr), "insufficient") ||
+		strings.Contains(strings.ToLower(errStr), "credit") ||
+		strings.Contains(strings.ToLower(errStr), "billing") ||
+		strings.Contains(strings.ToLower(errStr), "limit reached") {
+		return fmt.Sprintf("❌ **OpenRouter Error: Insufficient Credits / Billing Limit**\n\nThe request failed due to insufficient credits or billing limits on the configured OpenRouter account. Please check your account balance.\n\n*Error details:* `%s`", errStr)
+	}
+
+	// Fallback with a more detailed message instead of a generic one
+	return fmt.Sprintf("%s\n\n*Error details:* `%s`", fallback, errStr)
 }
